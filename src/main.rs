@@ -2,7 +2,7 @@ extern crate rand;
 
 mod env;
 mod env_bitboard;
-mod env_naive;
+// mod env_naive;
 
 mod mcts;
 

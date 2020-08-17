@@ -13,7 +13,7 @@ pub struct Node<E: Env + Clone> {
     pub my_action: bool,
     pub actions: Vec<E::Action>,
     pub children: Vec<usize>,
-    pub unvisited_actions: Vec<E::Action>,
+    pub unvisited_actions: E::ActionIterator,
     pub num_visits: f32,
     pub reward: f32,
 }
@@ -23,29 +23,39 @@ impl<E: Env + Clone> Node<E> {
         std::mem::size_of::<Self>()
             + self.actions.capacity() * std::mem::size_of::<E::Action>()
             + self.children.capacity() * std::mem::size_of::<usize>()
-            + self.unvisited_actions.capacity() * std::mem::size_of::<E::Action>()
+            // + self.unvisited_actions.capacity() * std::mem::size_of::<E::Action>()
+            + std::mem::size_of::<E::ActionIterator>()
     }
 
-    pub fn new(id: usize, parent: Option<(&Self, &E::Action)>) -> Self {
-        let (env, parent_id, my_action, is_over) = match parent {
-            Some((node, action)) => {
-                let mut env = node.env.clone();
-                env.step(action);
-                let is_over = env.is_over();
-                (env, node.id, !node.my_action, is_over)
-            }
-            None => (E::new(), 0, false, false),
-        };
-
-        let actions = if is_over { Vec::new() } else { env.actions() };
-
+    pub fn new_root(id: usize) -> Self {
+        let env = E::new();
+        let actions = env.iter_actions();
         Node {
             id: id,
-            parent: parent_id,
+            parent: 0,
+            env: env,
+            terminal: false,
+            expanded: false,
+            my_action: false,
+            actions: Vec::new(),
+            children: Vec::new(),
+            unvisited_actions: actions,
+            num_visits: 0.0,
+            reward: 0.0,
+        }
+    }
+
+    pub fn new(id: usize, node: &Self, action: &E::Action) -> Self {
+        let mut env = node.env.clone();
+        let is_over = env.step(action);
+        let actions = env.iter_actions();
+        Node {
+            id: id,
+            parent: node.id,
             env: env,
             terminal: is_over,
-            expanded: false,
-            my_action: my_action,
+            expanded: is_over,
+            my_action: !node.my_action,
             actions: Vec::new(),
             children: Vec::new(),
             unvisited_actions: actions,
@@ -97,7 +107,7 @@ impl<E: Env + Clone> MCTS<E> {
     }
 
     pub fn new(id: usize, evaluator: fn(&VecDeque<Node<E>>, &Node<E>) -> f32) -> Self {
-        let mut root = Node::new(0, None);
+        let mut root = Node::new_root(0);
         root.my_action = id == WHITE;
         let mut nodes = VecDeque::new();
         nodes.push_back(root);
@@ -116,7 +126,7 @@ impl<E: Env + Clone> MCTS<E> {
         evaluator: fn(&VecDeque<Node<E>>, &Node<E>) -> f32,
         seed: u64,
     ) -> Self {
-        let mut root = Node::new(0, None);
+        let mut root = Node::new_root(0);
         root.my_action = id == WHITE;
         let mut nodes = VecDeque::with_capacity(capacity);
         nodes.push_back(root);
@@ -145,7 +155,7 @@ impl<E: Env + Clone> MCTS<E> {
                 new_root
             }
             None => {
-                let child_node = Node::new(0, Some((&self.nodes[self.root - self.root], action)));
+                let child_node = Node::new(0, &self.nodes[self.root - self.root], action);
                 self.nodes.clear();
                 self.nodes.push_back(child_node);
                 0
@@ -224,17 +234,17 @@ impl<E: Env + Clone> MCTS<E> {
 
         let child_node = {
             let node = &mut self.nodes[node_id - self.root];
-            let action = node.unvisited_actions.pop().unwrap();
+            let action = node.unvisited_actions.next().unwrap();
             node.actions.push(action);
             node.children.push(child_id);
-            if node.unvisited_actions.len() == 0 {
+            if node.unvisited_actions.size_hint().0 == 0 {
                 node.expanded = true;
                 // note: very little impact to memory
                 // node.unvisited_actions.shrink_to_fit();
                 // node.actions.shrink_to_fit();
                 // node.children.shrink_to_fit();
             }
-            Node::new(child_id, Some((&node, &action)))
+            Node::new(child_id, &node, &action)
         };
         self.nodes.push_back(child_node);
 
@@ -296,13 +306,39 @@ impl<E: Env + Clone> MCTS<E> {
 
     pub fn timed_explore_n(&mut self, n: usize) -> (usize, u128) {
         let mut select_ns = 0;
+        let mut select_best_ns = 0;
+        let mut select_unexpanded_ns = 0;
         let mut rollout_ns = 0;
         let mut backprop_ns = 0;
+        let mut select_best_n = 0;
+        let mut select_unexpanded_n = 0;
 
         let start = Instant::now();
         for _i in 0..n {
             let select_start = Instant::now();
-            let node_id = self.select_node();
+            // let node_id = self.select_node();
+            let node_id = {
+                let mut node_id = self.root;
+                loop {
+                    // assert!(node_id < self.nodes.len());
+                    let node = &self.nodes[node_id - self.root];
+                    if node.terminal {
+                        break;
+                    } else if node.expanded {
+                        select_best_n += 1;
+                        let select_best_start = Instant::now();
+                        node_id = self.select_best_child(node_id);
+                        select_best_ns += select_best_start.elapsed().as_nanos();
+                    } else {
+                        select_unexpanded_n += 1;
+                        let select_unexpanded_start = Instant::now();
+                        node_id = self.select_unexpanded_child(node_id);
+                        select_unexpanded_ns += select_unexpanded_start.elapsed().as_nanos();
+                        break;
+                    }
+                }
+                node_id
+            };
             select_ns += select_start.elapsed().as_nanos();
 
             let rollout_start = Instant::now();
@@ -319,6 +355,11 @@ impl<E: Env + Clone> MCTS<E> {
             select_ns as f32 / n as f32,
             rollout_ns as f32 / n as f32,
             backprop_ns as f32 / n as f32
+        );
+        println!(
+            "{} {}",
+            select_best_ns as f32 / select_best_n as f32,
+            select_unexpanded_ns as f32 / select_unexpanded_n as f32
         );
         (n, start.elapsed().as_millis())
     }

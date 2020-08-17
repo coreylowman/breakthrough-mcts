@@ -51,6 +51,10 @@ impl Iterator for ActionIterator {
 
         Some((from_sq, to_sq))
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.0 as usize, None)
+    }
 }
 
 #[derive(Eq, PartialEq, Clone)]
@@ -101,6 +105,8 @@ impl BitBoardEnv {
 
 impl Env for BitBoardEnv {
     type Action = (Square, Square);
+    type ActionIterator =
+        std::iter::Chain<std::iter::Chain<ActionIterator, ActionIterator>, ActionIterator>;
 
     fn new() -> BitBoardEnv {
         BitBoardEnv {
@@ -159,6 +165,17 @@ impl Env for BitBoardEnv {
         acs.extend(ActionIterator(right_from, right_to));
         acs.extend(ActionIterator(left_from, left_to));
         acs
+    }
+
+    fn iter_actions(&self) -> Self::ActionIterator {
+        let p = &self.player;
+        let (fwd_to, right_to, left_to) = self.action_bitboards();
+        let fwd_from = fwd_to.rotate_left(64 - p.fwd_shift);
+        let right_from = right_to.rotate_left(64 - p.right_shift);
+        let left_from = left_to.rotate_left(64 - p.left_shift);
+        ActionIterator(fwd_from, fwd_to)
+            .chain(ActionIterator(right_from, right_to))
+            .chain(ActionIterator(left_from, left_to))
     }
 
     fn get_random_action(&self, rng: &mut StdRng) -> Self::Action {
