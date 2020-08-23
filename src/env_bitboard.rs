@@ -195,9 +195,9 @@ impl Env for BitBoardEnv {
     fn get_random_action(&self, rng: &mut StdRng) -> Self::Action {
         let (fwd_to, right_to, left_to) = self.action_bitboards();
 
-        let num_fwd_acs = fwd_to.count_ones();
-        let num_right_acs = right_to.count_ones();
-        let num_left_acs = left_to.count_ones();
+        let num_fwd_acs = fwd_to.count_ones() as u8;
+        let num_right_acs = right_to.count_ones() as u8;
+        let num_left_acs = left_to.count_ones() as u8;
 
         let i = rng.gen_range(0, num_fwd_acs + num_right_acs + num_left_acs);
 
@@ -207,19 +207,16 @@ impl Env for BitBoardEnv {
             ActionIterator(left_from, left_to)
                 .nth((i - (num_fwd_acs + num_right_acs)) as usize)
                 .unwrap()
-        // ActionIterator(left_from, left_to).fast_nth(i - num_fwd_acs - num_right_acs)
         } else if i >= num_fwd_acs {
             // generate a right action
             let right_from = right_to.rotate_right(self.me.right_shift as u32);
             ActionIterator(right_from, right_to)
                 .nth((i - num_fwd_acs) as usize)
                 .unwrap()
-        // ActionIterator(right_from, right_to).fast_nth(i - num_fwd_acs)
         } else {
             // generate a forward action
             let fwd_from = fwd_to.rotate_right(self.me.fwd_shift as u32);
             ActionIterator(fwd_from, fwd_to).nth(i as usize).unwrap()
-            // ActionIterator(fwd_from, fwd_to).fast_nth(i)
         }
     }
 
