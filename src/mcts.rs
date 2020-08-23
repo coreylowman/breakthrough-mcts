@@ -232,6 +232,11 @@ impl<E: Env + Clone> MCTS<E> {
         let child_node = {
             let node = &mut self.nodes[node_id - self.root];
             let action = node.unvisited_actions.next().unwrap();
+            if node.actions.capacity() == 0 {
+                // finally allocate space for max possible actions if we are looking down this node
+                node.actions.reserve_exact(48);
+                node.children.reserve_exact(48);
+            }
             node.actions.push(action);
             node.children.push(child_id);
             if node.unvisited_actions.size_hint().0 == 0 {
