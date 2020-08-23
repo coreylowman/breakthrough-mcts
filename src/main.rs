@@ -143,7 +143,7 @@ fn timed_first_explore() {
     let mut white_mcts =
         MCTS::<BitBoardEnv>::with_capacity(WHITE, 2_000_000, default_node_value, 0);
 
-    let (num_steps, millis) = white_mcts.timed_explore_n(100_000);
+    let (num_steps, millis) = white_mcts.timed_explore_n(1_000_000);
     eprintln!(
         "{} ({} in {}ms)... {} nodes",
         num_steps as f32 / millis as f32,

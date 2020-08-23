@@ -348,13 +348,13 @@ impl<E: Env + Clone> MCTS<E> {
         }
 
         println!(
-            "{} {} {}",
+            "select {}ns | rollout {}ns | backprop {}ns",
             select_ns as f32 / n as f32,
             rollout_ns as f32 / n as f32,
             backprop_ns as f32 / n as f32
         );
         println!(
-            "{} {}",
+            "select_best_child {}ns | select_unexpanded_child {}ns",
             select_best_ns as f32 / select_best_n as f32,
             select_unexpanded_ns as f32 / select_unexpanded_n as f32
         );
