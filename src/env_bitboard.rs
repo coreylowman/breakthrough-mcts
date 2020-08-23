@@ -77,7 +77,7 @@ pub struct PlayerInfo {
     right_shift: u8,
     left_shift: u8,
     pieces_left: u8,
-    ty: BitBoard,
+    ty_shift: u8,
 }
 
 #[derive(Eq, PartialEq, Clone)]
@@ -95,9 +95,9 @@ impl BitBoardEnv {
             (self.my_bb & NOT_COL_8).rotate_left(self.me.right_shift as u32) & !self.my_bb;
         let left_to = (self.my_bb & NOT_COL_1).rotate_left(self.me.left_shift as u32) & !self.my_bb;
 
-        let fwd_win = fwd_to & self.me.ty;
-        let right_win = right_to & self.me.ty;
-        let left_win = left_to & self.me.ty;
+        let fwd_win = fwd_to & (ROW_1 << self.me.ty_shift);
+        let right_win = right_to & (ROW_1 << self.me.ty_shift);
+        let left_win = left_to & (ROW_1 << self.me.ty_shift);
 
         if fwd_win != 0 || right_win != 0 || left_win != 0 {
             (fwd_win, right_win, left_win)
@@ -134,7 +134,7 @@ impl Env for BitBoardEnv {
                 right_shift: 9,
                 pieces_left: 16,
                 won: false,
-                ty: ROW_8,
+                ty_shift: 56,
             },
             op: PlayerInfo {
                 id: BLACK,
@@ -143,7 +143,7 @@ impl Env for BitBoardEnv {
                 right_shift: 57,
                 pieces_left: 16,
                 won: false,
-                ty: ROW_1,
+                ty_shift: 0,
             },
         }
     }
@@ -232,7 +232,7 @@ impl Env for BitBoardEnv {
         self.my_bb = (self.my_bb | to) & !from;
 
         // note: count_ones() here is slower than keeping track ourselves
-        self.me.won = self.me.ty & to != 0 || self.op.pieces_left == 0;
+        self.me.won = (ROW_1 << self.me.ty_shift) & to != 0 || self.op.pieces_left == 0;
 
         std::mem::swap(&mut self.me, &mut self.op);
         std::mem::swap(&mut self.my_bb, &mut self.op_bb);
