@@ -5,14 +5,12 @@ use std::collections::VecDeque;
 use std::time::Instant;
 
 pub struct Node<E: Env + Clone> {
-    pub id: usize,
     pub parent: usize,
     pub env: E,
     pub terminal: bool,
     pub expanded: bool,
     pub my_action: bool,
-    pub actions: Vec<E::Action>,
-    pub children: Vec<usize>,
+    pub children: Vec<(E::Action, usize)>,
     pub unvisited_actions: E::ActionIterator,
     pub num_visits: f32,
     pub reward: f32,
@@ -21,8 +19,8 @@ pub struct Node<E: Env + Clone> {
 impl<E: Env + Clone> Node<E> {
     pub fn memory_usage(&self) -> usize {
         std::mem::size_of::<Self>()
-            + self.actions.capacity() * std::mem::size_of::<E::Action>()
-            + self.children.capacity() * std::mem::size_of::<usize>()
+            // + self.actions.capacity() * std::mem::size_of::<E::Action>()
+            + self.children.capacity() * std::mem::size_of::<(E::Action, usize)>()
             // + self.unvisited_actions.capacity() * std::mem::size_of::<E::Action>()
             + std::mem::size_of::<E::ActionIterator>()
     }
@@ -31,13 +29,11 @@ impl<E: Env + Clone> Node<E> {
         let env = E::new();
         let actions = env.iter_actions();
         Node {
-            id: id,
             parent: 0,
             env: env,
             terminal: false,
             expanded: false,
             my_action: false,
-            actions: Vec::new(),
             children: Vec::new(),
             unvisited_actions: actions,
             num_visits: 0.0,
@@ -45,18 +41,16 @@ impl<E: Env + Clone> Node<E> {
         }
     }
 
-    pub fn new(id: usize, node: &Self, action: &E::Action) -> Self {
+    pub fn new(parent_id: usize, node: &Self, action: &E::Action) -> Self {
         let mut env = node.env.clone();
         let is_over = env.step(action);
         let actions = env.iter_actions();
         Node {
-            id: id,
-            parent: node.id,
+            parent: parent_id,
             env: env,
             terminal: is_over,
             expanded: is_over,
             my_action: !node.my_action,
-            actions: Vec::new(),
             children: Vec::new(),
             unvisited_actions: actions,
             num_visits: 0.0,
@@ -71,15 +65,15 @@ pub fn default_node_value<E: Env + Clone>(nodes: &VecDeque<Node<E>>, node: &Node
 
 pub fn minimax_value<E: Env + Clone>(nodes: &VecDeque<Node<E>>, node: &Node<E>) -> f32 {
     let mut min_value = std::f32::INFINITY;
-    let root_id = nodes[0].id;
+    // let root_id = nodes[0].id;
 
-    for (i, &child_id) in node.children.iter().enumerate() {
-        let child = &nodes[child_id - root_id];
-        let value = 1.0 - child.reward / child.num_visits;
-        if value < min_value {
-            min_value = value;
-        }
-    }
+    // for (i, &child_id) in node.children.iter().enumerate() {
+    //     let child = &nodes[child_id - root_id];
+    //     let value = 1.0 - child.reward / child.num_visits;
+    //     if value < min_value {
+    //         min_value = value;
+    //     }
+    // }
 
     min_value
 }
@@ -141,12 +135,12 @@ impl<E: Env + Clone> MCTS<E> {
 
     pub fn step_action(&mut self, action: &E::Action) {
         self.root = match self.nodes[self.root - self.root]
-            .actions
+            .children
             .iter()
-            .position(|a| a == action)
+            .position(|(a, c)| a == action)
         {
             Some(action_index) => {
-                let new_root = self.nodes[self.root - self.root].children[action_index];
+                let (_, new_root) = self.nodes[self.root - self.root].children[action_index];
                 drop(self.nodes.drain(0..new_root - self.root));
                 new_root
             }
@@ -167,7 +161,7 @@ impl<E: Env + Clone> MCTS<E> {
         let mut best_action_ind = 0;
         let mut best_value = -std::f32::INFINITY;
 
-        for (i, &child_id) in root.children.iter().enumerate() {
+        for (i, &(_, child_id)) in root.children.iter().enumerate() {
             let child = &self.nodes[child_id - self.root];
             let value = (self.evaluator)(&self.nodes, child);
             if value > best_value {
@@ -176,7 +170,7 @@ impl<E: Env + Clone> MCTS<E> {
             }
         }
 
-        root.actions[best_action_ind].clone()
+        root.children[best_action_ind].0.clone()
     }
 
     fn explore(&mut self) {
@@ -210,7 +204,7 @@ impl<E: Env + Clone> MCTS<E> {
 
         let parent_visits = node.num_visits.log(2.0);
 
-        for &child_id in node.children.iter() {
+        for &(_, child_id) in node.children.iter() {
             let child = &self.nodes[child_id - self.root];
 
             let value =
@@ -226,19 +220,17 @@ impl<E: Env + Clone> MCTS<E> {
     }
 
     // #[inline(never)]
-    fn select_unexpanded_child(&mut self, node_id: usize) -> usize {
+    fn select_unexpanded_child(&mut self, parent_id: usize) -> usize {
         let child_id = self.next_node_id();
 
         let child_node = {
-            let node = &mut self.nodes[node_id - self.root];
+            let node = &mut self.nodes[parent_id - self.root];
             let action = node.unvisited_actions.next().unwrap();
-            if node.actions.capacity() == 0 {
+            if node.children.capacity() == 0 {
                 // finally allocate space for max possible actions if we are looking down this node
-                node.actions.reserve_exact(48);
                 node.children.reserve_exact(48);
             }
-            node.actions.push(action);
-            node.children.push(child_id);
+            node.children.push((action, child_id));
             if node.unvisited_actions.size_hint().0 == 0 {
                 node.expanded = true;
                 // note: very little impact to memory
@@ -246,7 +238,7 @@ impl<E: Env + Clone> MCTS<E> {
                 // node.actions.shrink_to_fit();
                 // node.children.shrink_to_fit();
             }
-            Node::new(child_id, &node, &action)
+            Node::new(parent_id, &node, &action)
         };
         self.nodes.push_back(child_node);
 

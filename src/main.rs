@@ -343,9 +343,13 @@ fn compare<E: Env + Clone>(
 }
 
 fn local_main() {
-    println!("{}", std::mem::size_of::<Node<BitBoardEnv>>());
+    println!("Node {}", std::mem::size_of::<Node<BitBoardEnv>>());
     println!("BitBoardEnv {}", std::mem::size_of::<BitBoardEnv>());
     println!("PlayerInfo {}", std::mem::size_of::<PlayerInfo>());
+    println!(
+        "BitBoardEnv::ActionIterator {}",
+        std::mem::size_of::<<env_bitboard::BitBoardEnv as Env>::ActionIterator>()
+    );
     first_explore();
     // timed_first_explore();
     // run_game();
