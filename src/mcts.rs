@@ -85,7 +85,7 @@ pub fn minimax_value<E: Env + Clone>(nodes: &VecDeque<Node<E>>, node: &Node<E>) 
 }
 
 pub struct MCTS<E: Env + Clone> {
-    pub id: usize,
+    pub id: bool,
     pub root: usize,
     pub nodes: VecDeque<Node<E>>,
     pub evaluator: fn(&VecDeque<Node<E>>, &Node<E>) -> f32,
@@ -102,7 +102,7 @@ impl<E: Env + Clone> MCTS<E> {
         mem
     }
 
-    pub fn new(id: usize, evaluator: fn(&VecDeque<Node<E>>, &Node<E>) -> f32) -> Self {
+    pub fn new(id: bool, evaluator: fn(&VecDeque<Node<E>>, &Node<E>) -> f32) -> Self {
         let mut root = Node::new_root(0);
         root.my_action = id == WHITE;
         let mut nodes = VecDeque::new();
@@ -117,7 +117,7 @@ impl<E: Env + Clone> MCTS<E> {
     }
 
     pub fn with_capacity(
-        id: usize,
+        id: bool,
         capacity: usize,
         evaluator: fn(&VecDeque<Node<E>>, &Node<E>) -> f32,
         seed: u64,

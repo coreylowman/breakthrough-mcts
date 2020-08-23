@@ -11,7 +11,7 @@ use std::io;
 use std::time::Instant;
 
 use env::{Env, BLACK, WHITE};
-use env_bitboard::BitBoardEnv;
+use env_bitboard::{BitBoardEnv, PlayerInfo};
 use mcts::{default_node_value, minimax_value, Node, MCTS};
 
 macro_rules! parse_input {
@@ -126,7 +126,7 @@ fn codingame_main() {
 }
 
 fn first_explore() {
-    let mut white_mcts = MCTS::<BitBoardEnv>::new(0, default_node_value);
+    let mut white_mcts = MCTS::<BitBoardEnv>::new(WHITE, default_node_value);
 
     let (num_steps, millis) = white_mcts.explore_n(100_000);
     eprintln!(
@@ -139,7 +139,7 @@ fn first_explore() {
 }
 
 fn timed_first_explore() {
-    let mut white_mcts = MCTS::<BitBoardEnv>::new(0, default_node_value);
+    let mut white_mcts = MCTS::<BitBoardEnv>::new(WHITE, default_node_value);
 
     let (num_steps, millis) = white_mcts.timed_explore_n(100_000);
     eprintln!(
@@ -160,11 +160,13 @@ fn run_game() {
     let mut black_step_ms = 0;
 
     let white_init_start = Instant::now();
-    let mut white_mcts = MCTS::<BitBoardEnv>::with_capacity(0, 1_500_000, default_node_value, 0);
+    let mut white_mcts =
+        MCTS::<BitBoardEnv>::with_capacity(WHITE, 1_500_000, default_node_value, 0);
     println!("white {}ms", white_init_start.elapsed().as_millis());
 
     let black_init_start = Instant::now();
-    let mut black_mcts = MCTS::<BitBoardEnv>::with_capacity(1, 1_500_000, default_node_value, 0);
+    let mut black_mcts =
+        MCTS::<BitBoardEnv>::with_capacity(BLACK, 1_500_000, default_node_value, 0);
     println!("black {}ms", black_init_start.elapsed().as_millis());
 
     let (num_steps, millis) = white_mcts.explore_n(300_000);
@@ -278,7 +280,7 @@ fn run_game() {
         black_step_ms += step_elapsed;
     }
 
-    println!("{} {}", env.reward(0), env.reward(1));
+    println!("{} {}", env.reward(WHITE), env.reward(BLACK));
 
     let white_mb = white_mcts.memory_usage() / 1_000_000;
     let black_mb = black_mcts.memory_usage() / 1_000_000;
@@ -300,10 +302,10 @@ fn compare<E: Env + Clone>(
     white_eval: fn(&VecDeque<Node<E>>, &Node<E>) -> f32,
     black_eval: fn(&VecDeque<Node<E>>, &Node<E>) -> f32,
     seed: u64,
-) -> usize {
+) -> bool {
     let mut env = E::new();
-    let mut white_mcts = MCTS::<E>::with_capacity(0, 1_500_000, white_eval, seed);
-    let mut black_mcts = MCTS::<E>::with_capacity(1, 1_500_000, black_eval, seed);
+    let mut white_mcts = MCTS::<E>::with_capacity(WHITE, 1_500_000, white_eval, seed);
+    let mut black_mcts = MCTS::<E>::with_capacity(BLACK, 1_500_000, black_eval, seed);
 
     let (num_steps, millis) = white_mcts.explore_n(300_000);
     let mut action = white_mcts.best_action();
@@ -340,6 +342,8 @@ fn compare<E: Env + Clone>(
 
 fn local_main() {
     println!("{}", std::mem::size_of::<Node<BitBoardEnv>>());
+    println!("BitBoardEnv {}", std::mem::size_of::<BitBoardEnv>());
+    println!("PlayerInfo {}", std::mem::size_of::<PlayerInfo>());
     first_explore();
     // timed_first_explore();
     // run_game();

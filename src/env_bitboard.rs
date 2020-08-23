@@ -71,39 +71,50 @@ impl Iterator for ActionIterator {
 
 #[derive(Eq, PartialEq, Clone)]
 pub struct PlayerInfo {
-    pub id: usize,
-    pieces: BitBoard,
+    id: bool,
+    won: bool,
     fwd_shift: u8,
     right_shift: u8,
     left_shift: u8,
     pieces_left: u8,
-    won: bool,
     ty: BitBoard,
 }
 
 #[derive(Eq, PartialEq, Clone)]
 pub struct BitBoardEnv {
-    pub player: PlayerInfo,
-    pub opponent: PlayerInfo,
+    my_bb: BitBoard,
+    op_bb: BitBoard,
+    me: PlayerInfo,
+    op: PlayerInfo,
 }
 
 impl BitBoardEnv {
     fn action_bitboards(&self) -> (BitBoard, BitBoard, BitBoard) {
-        let p = &self.player;
+        let fwd_to = self.my_bb.rotate_left(self.me.fwd_shift as u32) & !self.my_bb & !self.op_bb;
+        let right_to =
+            (self.my_bb & NOT_COL_8).rotate_left(self.me.right_shift as u32) & !self.my_bb;
+        let left_to = (self.my_bb & NOT_COL_1).rotate_left(self.me.left_shift as u32) & !self.my_bb;
 
-        let fwd_to = p.pieces.rotate_left(p.fwd_shift as u32) & !p.pieces & !self.opponent.pieces;
-        let right_to = (p.pieces & NOT_COL_8).rotate_left(p.right_shift as u32) & !p.pieces;
-        let left_to = (p.pieces & NOT_COL_1).rotate_left(p.left_shift as u32) & !p.pieces;
-
-        let fwd_win = fwd_to & p.ty;
-        let right_win = right_to & p.ty;
-        let left_win = left_to & p.ty;
+        let fwd_win = fwd_to & self.me.ty;
+        let right_win = right_to & self.me.ty;
+        let left_win = left_to & self.me.ty;
 
         if fwd_win != 0 || right_win != 0 || left_win != 0 {
             (fwd_win, right_win, left_win)
         } else {
             (fwd_to, right_to, left_to)
         }
+
+        // note: this branchless version is actually slower!
+        // let raw_any_win = fwd_win != 0 || right_win != 0 || left_win != 0;
+        // let any_win = raw_any_win as u64;
+        // let none_win = !raw_any_win as u64;
+
+        // let fwd_to = (fwd_win * any_win) | (fwd_to * none_win);
+        // let right_to = (right_win * any_win) | (right_to * none_win);
+        // let left_to = (left_win * any_win) | (left_to * none_win);
+
+        // (fwd_to, right_to, left_to)
     }
 }
 
@@ -114,9 +125,10 @@ impl Env for BitBoardEnv {
 
     fn new() -> BitBoardEnv {
         BitBoardEnv {
-            player: PlayerInfo {
+            my_bb: ROW_1 | ROW_2,
+            op_bb: ROW_7 | ROW_8,
+            me: PlayerInfo {
                 id: WHITE,
-                pieces: ROW_1 | ROW_2,
                 left_shift: 7,
                 fwd_shift: 8,
                 right_shift: 9,
@@ -124,9 +136,8 @@ impl Env for BitBoardEnv {
                 won: false,
                 ty: ROW_8,
             },
-            opponent: PlayerInfo {
+            op: PlayerInfo {
                 id: BLACK,
-                pieces: ROW_7 | ROW_8,
                 left_shift: 55,
                 fwd_shift: 56,
                 right_shift: 57,
@@ -137,17 +148,17 @@ impl Env for BitBoardEnv {
         }
     }
 
-    fn turn(&self) -> usize {
-        self.player.id
+    fn turn(&self) -> bool {
+        self.me.id
     }
 
     fn is_over(&self) -> bool {
-        self.opponent.won
+        self.op.won
     }
 
-    fn reward(&self, color: usize) -> f32 {
-        // assert!(self.opponent.won);
-        if self.opponent.id == color {
+    fn reward(&self, color: bool) -> f32 {
+        // assert!(self.op.won);
+        if self.op.id == color {
             1.0
         } else {
             0.0 // TODO test out -1.0
@@ -157,13 +168,11 @@ impl Env for BitBoardEnv {
     fn actions(&self) -> Vec<Self::Action> {
         let mut acs = Vec::with_capacity(16 * 3);
 
-        let p = &self.player;
-
         let (fwd_to, right_to, left_to) = self.action_bitboards();
 
-        let fwd_from = fwd_to.rotate_right(p.fwd_shift as u32);
-        let right_from = right_to.rotate_right(p.right_shift as u32);
-        let left_from = left_to.rotate_right(p.left_shift as u32);
+        let fwd_from = fwd_to.rotate_right(self.me.fwd_shift as u32);
+        let right_from = right_to.rotate_right(self.me.right_shift as u32);
+        let left_from = left_to.rotate_right(self.me.left_shift as u32);
 
         acs.extend(ActionIterator(fwd_from, fwd_to));
         acs.extend(ActionIterator(right_from, right_to));
@@ -172,19 +181,16 @@ impl Env for BitBoardEnv {
     }
 
     fn iter_actions(&self) -> Self::ActionIterator {
-        let p = &self.player;
         let (fwd_to, right_to, left_to) = self.action_bitboards();
-        let fwd_from = fwd_to.rotate_right(p.fwd_shift as u32);
-        let right_from = right_to.rotate_right(p.right_shift as u32);
-        let left_from = left_to.rotate_right(p.left_shift as u32);
+        let fwd_from = fwd_to.rotate_right(self.me.fwd_shift as u32);
+        let right_from = right_to.rotate_right(self.me.right_shift as u32);
+        let left_from = left_to.rotate_right(self.me.left_shift as u32);
         ActionIterator(fwd_from, fwd_to)
             .chain(ActionIterator(right_from, right_to))
             .chain(ActionIterator(left_from, left_to))
     }
 
     fn get_random_action(&self, rng: &mut StdRng) -> Self::Action {
-        let p = &self.player;
-
         let (fwd_to, right_to, left_to) = self.action_bitboards();
 
         let num_fwd_acs = fwd_to.count_ones();
@@ -195,21 +201,21 @@ impl Env for BitBoardEnv {
 
         if i >= num_fwd_acs + num_right_acs {
             // generate a left action
-            let left_from = left_to.rotate_right(p.left_shift as u32);
+            let left_from = left_to.rotate_right(self.me.left_shift as u32);
             ActionIterator(left_from, left_to)
                 .nth((i - (num_fwd_acs + num_right_acs)) as usize)
                 .unwrap()
         // ActionIterator(left_from, left_to).fast_nth(i - num_fwd_acs - num_right_acs)
         } else if i >= num_fwd_acs {
             // generate a right action
-            let right_from = right_to.rotate_right(p.right_shift as u32);
+            let right_from = right_to.rotate_right(self.me.right_shift as u32);
             ActionIterator(right_from, right_to)
                 .nth((i - num_fwd_acs) as usize)
                 .unwrap()
         // ActionIterator(right_from, right_to).fast_nth(i - num_fwd_acs)
         } else {
             // generate a forward action
-            let fwd_from = fwd_to.rotate_right(p.fwd_shift as u32);
+            let fwd_from = fwd_to.rotate_right(self.me.fwd_shift as u32);
             ActionIterator(fwd_from, fwd_to).nth(i as usize).unwrap()
             // ActionIterator(fwd_from, fwd_to).fast_nth(i)
         }
@@ -221,15 +227,16 @@ impl Env for BitBoardEnv {
         let to = 1 << to_sq;
         let from = 1 << from_sq;
 
-        self.opponent.pieces_left -= ((self.opponent.pieces >> to_sq) & 1) as u8;
-        self.opponent.pieces &= !to;
-        self.player.pieces = (self.player.pieces | to) & !from;
+        self.op.pieces_left -= ((self.op_bb >> to_sq) & 1) as u8;
+        self.op_bb &= !to;
+        self.my_bb = (self.my_bb | to) & !from;
 
         // note: count_ones() here is slower than keeping track ourselves
-        self.player.won = self.player.ty & to != 0 || self.opponent.pieces_left == 0;
+        self.me.won = self.me.ty & to != 0 || self.op.pieces_left == 0;
 
-        std::mem::swap(&mut self.player, &mut self.opponent);
+        std::mem::swap(&mut self.me, &mut self.op);
+        std::mem::swap(&mut self.my_bb, &mut self.op_bb);
 
-        self.opponent.won
+        self.op.won
     }
 }
