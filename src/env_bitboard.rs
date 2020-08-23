@@ -38,12 +38,17 @@ pub struct ActionIterator(BitBoard, BitBoard);
 impl ActionIterator {
     // TODO how is this slower???
     #[inline]
-    fn fast_nth(&mut self, n: u32) -> (Square, Square) {
-        for _ in 0..n {
+    fn fast_nth(&mut self, mut n: u32) -> (Square, Square) {
+        while n != 0 {
             self.0 &= self.0.wrapping_sub(1);
             self.1 &= self.1.wrapping_sub(1);
+
+            n -= 1;
         }
-        (self.0.trailing_zeros(), self.1.trailing_zeros())
+
+        let from_sq = self.0.trailing_zeros();
+        let to_sq = self.1.trailing_zeros();
+        (from_sq, to_sq)
     }
 }
 
@@ -76,7 +81,6 @@ pub struct PlayerInfo {
     fwd_shift: u8,
     right_shift: u8,
     left_shift: u8,
-    pieces_left: u8,
     ty_shift: u8,
 }
 
@@ -132,7 +136,6 @@ impl Env for BitBoardEnv {
                 left_shift: 7,
                 fwd_shift: 8,
                 right_shift: 9,
-                pieces_left: 16,
                 won: false,
                 ty_shift: 56,
             },
@@ -141,7 +144,6 @@ impl Env for BitBoardEnv {
                 left_shift: 55,
                 fwd_shift: 56,
                 right_shift: 57,
-                pieces_left: 16,
                 won: false,
                 ty_shift: 0,
             },
@@ -224,15 +226,13 @@ impl Env for BitBoardEnv {
     fn step(&mut self, action: &Self::Action) -> bool {
         let &(from_sq, to_sq) = action;
 
-        let to = 1 << to_sq;
-        let from = 1 << from_sq;
+        let to_bb = 1 << to_sq;
+        let from_bb = 1 << from_sq;
 
-        self.op.pieces_left -= ((self.op_bb >> to_sq) & 1) as u8;
-        self.op_bb &= !to;
-        self.my_bb = (self.my_bb | to) & !from;
+        self.op_bb &= !to_bb;
+        self.my_bb = (self.my_bb | to_bb) & !from_bb;
 
-        // note: count_ones() here is slower than keeping track ourselves
-        self.me.won = (ROW_1 << self.me.ty_shift) & to != 0 || self.op.pieces_left == 0;
+        self.me.won = (ROW_1 << self.me.ty_shift) & to_bb != 0 || self.op_bb == 0;
 
         std::mem::swap(&mut self.me, &mut self.op);
         std::mem::swap(&mut self.my_bb, &mut self.op_bb);
