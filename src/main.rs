@@ -212,7 +212,7 @@ fn run_game() {
         i += 1;
         println!("{}", i);
 
-        let action = if env.player.id == WHITE {
+        let action = if env.turn() == WHITE {
             let pre_node_size = white_mcts.nodes.len();
             let pre_node_capacity = white_mcts.nodes.capacity();
             let (num_steps, millis) = white_mcts.explore_n(50_000);
@@ -340,18 +340,24 @@ fn compare<E: Env + Clone>(
 
 fn local_main() {
     println!("{}", std::mem::size_of::<Node<BitBoardEnv>>());
-    // first_explore();
-    timed_first_explore();
+    first_explore();
+    // timed_first_explore();
     // run_game();
 
     // white default vs black default - black 55% winrate after 400 games
     // white minimax vs black default - white 60% winrate after 300 games
     // white default vs black minimax - black 70% winrate after 300 games
     // let mut wins = [0, 0];
-    // for i in 0..1000 {
-    //     let winner = compare::<BitBoardEnv>(default_node_value, default_node_value, i);
+    // for i in 0..300 {
+    //     let winner = compare::<BitBoardEnv>(default_node_value, minimax_value, i);
     //     wins[winner] += 1;
-    //     println!("WHITE {} | BLACK {}", wins[WHITE], wins[BLACK]);
+    //     println!(
+    //         "WHITE {} ({}%) | BLACK {} ({}%)",
+    //         wins[WHITE],
+    //         100.0 * wins[WHITE] as f32 / (i as f32 + 1.0),
+    //         wins[BLACK],
+    //         100.0 * wins[BLACK] as f32 / (i as f32 + 1.0)
+    //     );
     // }
 }
 

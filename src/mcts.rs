@@ -70,22 +70,18 @@ pub fn default_node_value<E: Env + Clone>(nodes: &VecDeque<Node<E>>, node: &Node
 }
 
 pub fn minimax_value<E: Env + Clone>(nodes: &VecDeque<Node<E>>, node: &Node<E>) -> f32 {
-    if node.expanded && node.num_visits > 500.0 {
-        let mut min_value = std::f32::INFINITY;
-        let root_id = nodes[0].id;
+    let mut min_value = std::f32::INFINITY;
+    let root_id = nodes[0].id;
 
-        for (i, &child_id) in node.children.iter().enumerate() {
-            let child = &nodes[child_id - root_id];
-            let value = 1.0 - child.reward / child.num_visits;
-            if value < min_value {
-                min_value = value;
-            }
+    for (i, &child_id) in node.children.iter().enumerate() {
+        let child = &nodes[child_id - root_id];
+        let value = 1.0 - child.reward / child.num_visits;
+        if value < min_value {
+            min_value = value;
         }
-
-        min_value
-    } else {
-        default_node_value(nodes, node)
     }
+
+    min_value
 }
 
 pub struct MCTS<E: Env + Clone> {
@@ -217,8 +213,8 @@ impl<E: Env + Clone> MCTS<E> {
         for &child_id in node.children.iter() {
             let child = &self.nodes[child_id - self.root];
 
-            let value = (self.evaluator)(&self.nodes, child)
-                + (2.0 * parent_visits / child.num_visits).sqrt();
+            let value =
+                child.reward / child.num_visits + (2.0 * parent_visits / child.num_visits).sqrt();
 
             if value > best_value {
                 best_value = value;
@@ -229,6 +225,7 @@ impl<E: Env + Clone> MCTS<E> {
         best_child
     }
 
+    // #[inline(never)]
     fn select_unexpanded_child(&mut self, node_id: usize) -> usize {
         let child_id = self.next_node_id();
 

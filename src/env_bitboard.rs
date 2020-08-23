@@ -35,6 +35,18 @@ impl Iterator for BitBoardIterator {
 
 pub struct ActionIterator(BitBoard, BitBoard);
 
+impl ActionIterator {
+    // TODO how is this slower???
+    #[inline]
+    fn fast_nth(&mut self, n: u32) -> (Square, Square) {
+        for _ in 0..n {
+            self.0 &= self.0.wrapping_sub(1);
+            self.1 &= self.1.wrapping_sub(1);
+        }
+        (self.0.trailing_zeros(), self.1.trailing_zeros())
+    }
+}
+
 impl Iterator for ActionIterator {
     type Item = (Square, Square);
 
@@ -61,10 +73,10 @@ impl Iterator for ActionIterator {
 pub struct PlayerInfo {
     pub id: usize,
     pieces: BitBoard,
-    fwd_shift: u32,
-    right_shift: u32,
-    left_shift: u32,
-    pieces_left: u64,
+    fwd_shift: u8,
+    right_shift: u8,
+    left_shift: u8,
+    pieces_left: u8,
     won: bool,
     ty: BitBoard,
 }
@@ -79,27 +91,19 @@ impl BitBoardEnv {
     fn action_bitboards(&self) -> (BitBoard, BitBoard, BitBoard) {
         let p = &self.player;
 
-        let pieces = p.pieces;
-        let npieces = !pieces;
-        let empty_squares = npieces & !self.opponent.pieces;
-
-        let fwd_to = pieces.rotate_left(p.fwd_shift) & empty_squares;
-        let right_to = (pieces & NOT_COL_8).rotate_left(p.right_shift) & npieces;
-        let left_to = (pieces & NOT_COL_1).rotate_left(p.left_shift) & npieces;
+        let fwd_to = p.pieces.rotate_left(p.fwd_shift as u32) & !p.pieces & !self.opponent.pieces;
+        let right_to = (p.pieces & NOT_COL_8).rotate_left(p.right_shift as u32) & !p.pieces;
+        let left_to = (p.pieces & NOT_COL_1).rotate_left(p.left_shift as u32) & !p.pieces;
 
         let fwd_win = fwd_to & p.ty;
         let right_win = right_to & p.ty;
         let left_win = left_to & p.ty;
 
-        let raw_any_win = fwd_win != 0 || right_win != 0 || left_win != 0;
-        let any_win = raw_any_win as u64;
-        let none_win = (!raw_any_win) as u64;
-
-        let fwd_to = (any_win * fwd_win) | (none_win * fwd_to);
-        let right_to = (any_win * right_win) | (none_win * right_to);
-        let left_to = (any_win * left_win) | (none_win * left_to);
-
-        (fwd_to, right_to, left_to)
+        if fwd_win != 0 || right_win != 0 || left_win != 0 {
+            (fwd_win, right_win, left_win)
+        } else {
+            (fwd_to, right_to, left_to)
+        }
     }
 }
 
@@ -157,9 +161,9 @@ impl Env for BitBoardEnv {
 
         let (fwd_to, right_to, left_to) = self.action_bitboards();
 
-        let fwd_from = fwd_to.rotate_left(64 - p.fwd_shift);
-        let right_from = right_to.rotate_left(64 - p.right_shift);
-        let left_from = left_to.rotate_left(64 - p.left_shift);
+        let fwd_from = fwd_to.rotate_right(p.fwd_shift as u32);
+        let right_from = right_to.rotate_right(p.right_shift as u32);
+        let left_from = left_to.rotate_right(p.left_shift as u32);
 
         acs.extend(ActionIterator(fwd_from, fwd_to));
         acs.extend(ActionIterator(right_from, right_to));
@@ -170,9 +174,9 @@ impl Env for BitBoardEnv {
     fn iter_actions(&self) -> Self::ActionIterator {
         let p = &self.player;
         let (fwd_to, right_to, left_to) = self.action_bitboards();
-        let fwd_from = fwd_to.rotate_left(64 - p.fwd_shift);
-        let right_from = right_to.rotate_left(64 - p.right_shift);
-        let left_from = left_to.rotate_left(64 - p.left_shift);
+        let fwd_from = fwd_to.rotate_right(p.fwd_shift as u32);
+        let right_from = right_to.rotate_right(p.right_shift as u32);
+        let left_from = left_to.rotate_right(p.left_shift as u32);
         ActionIterator(fwd_from, fwd_to)
             .chain(ActionIterator(right_from, right_to))
             .chain(ActionIterator(left_from, left_to))
@@ -191,20 +195,23 @@ impl Env for BitBoardEnv {
 
         if i >= num_fwd_acs + num_right_acs {
             // generate a left action
-            let left_from = left_to.rotate_left(64 - p.left_shift);
+            let left_from = left_to.rotate_right(p.left_shift as u32);
             ActionIterator(left_from, left_to)
                 .nth((i - (num_fwd_acs + num_right_acs)) as usize)
                 .unwrap()
+        // ActionIterator(left_from, left_to).fast_nth(i - num_fwd_acs - num_right_acs)
         } else if i >= num_fwd_acs {
             // generate a right action
-            let right_from = right_to.rotate_left(64 - p.right_shift);
+            let right_from = right_to.rotate_right(p.right_shift as u32);
             ActionIterator(right_from, right_to)
                 .nth((i - num_fwd_acs) as usize)
                 .unwrap()
+        // ActionIterator(right_from, right_to).fast_nth(i - num_fwd_acs)
         } else {
             // generate a forward action
-            let fwd_from = fwd_to.rotate_left(64 - p.fwd_shift);
+            let fwd_from = fwd_to.rotate_right(p.fwd_shift as u32);
             ActionIterator(fwd_from, fwd_to).nth(i as usize).unwrap()
+            // ActionIterator(fwd_from, fwd_to).fast_nth(i)
         }
     }
 
@@ -214,7 +221,7 @@ impl Env for BitBoardEnv {
         let to = 1 << to_sq;
         let from = 1 << from_sq;
 
-        self.opponent.pieces_left -= (self.opponent.pieces >> to_sq) & 1;
+        self.opponent.pieces_left -= ((self.opponent.pieces >> to_sq) & 1) as u8;
         self.opponent.pieces &= !to;
         self.player.pieces = (self.player.pieces | to) & !from;
 
