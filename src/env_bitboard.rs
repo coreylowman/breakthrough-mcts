@@ -226,13 +226,12 @@ impl Env for BitBoardEnv {
     fn step(&mut self, action: &Self::Action) -> bool {
         let &(from_sq, to_sq) = action;
 
-        let to_bb = 1 << to_sq;
-        let from_bb = 1 << from_sq;
+        // note: doing an xor here instead makes no difference, even if you use the same mask for op_bb & my_bb
+        self.op_bb &= !(1 << to_sq);
+        self.my_bb = (self.my_bb | (1 << to_sq)) & !(1 << from_sq);
 
-        self.op_bb &= !to_bb;
-        self.my_bb = (self.my_bb | to_bb) & !from_bb;
-
-        self.me.won = (ROW_1 << self.me.ty_shift) & to_bb != 0 || self.op_bb == 0;
+        // note: comparing ty_shift to to_bb is faster than doing a ty_shift <= to_sq < ty_max
+        self.me.won = (ROW_1 << self.me.ty_shift) & (1 << to_sq) != 0 || self.op_bb == 0;
 
         std::mem::swap(&mut self.me, &mut self.op);
         std::mem::swap(&mut self.my_bb, &mut self.op_bb);
