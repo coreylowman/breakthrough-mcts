@@ -126,7 +126,8 @@ fn codingame_main() {
 }
 
 fn first_explore() {
-    let mut white_mcts = MCTS::<BitBoardEnv>::new(WHITE, default_node_value);
+    let mut white_mcts =
+        MCTS::<BitBoardEnv>::with_capacity(WHITE, 2_000_000, default_node_value, 0);
 
     let (num_steps, millis) = white_mcts.explore_n(100_000);
     eprintln!(
