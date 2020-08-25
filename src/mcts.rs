@@ -5,15 +5,15 @@ use std::collections::VecDeque;
 use std::time::Instant;
 
 pub struct Node<E: Env + Clone> {
-    pub parent: usize,
-    pub env: E,
-    pub terminal: bool,
-    pub expanded: bool,
-    pub my_action: bool,
-    pub children: Vec<(E::Action, usize)>,
-    pub unvisited_actions: E::ActionIterator,
-    pub num_visits: f32,
-    pub reward: f32,
+    pub parent: usize,                        // 8 bytes
+    pub env: E,                               // 32 bytes
+    pub terminal: bool,                       // 1 byte
+    pub expanded: bool,                       // 1 byte
+    pub my_action: bool,                      // 1 byte
+    pub children: Vec<(E::Action, usize)>,    // 24 bytes
+    pub unvisited_actions: E::ActionIterator, // 64 bytes
+    pub num_visits: f32,                      //4 bytes
+    pub reward: f32,                          // 4 bytes
 }
 
 impl<E: Env + Clone> Node<E> {
@@ -156,6 +156,7 @@ impl<E: Env + Clone> MCTS<E> {
     }
 
     pub fn best_action(&self) -> E::Action {
+        // TODO replace this with depth limited alpha beta pruning
         let root = &self.nodes[self.root - self.root];
 
         let mut best_action_ind = 0;
@@ -185,6 +186,7 @@ impl<E: Env + Clone> MCTS<E> {
             // assert!(node_id < self.nodes.len());
             let node = &self.nodes[node_id - self.root];
             if node.terminal {
+                // TODO check if a double fetch of the node happens from this
                 return node_id;
             } else if node.expanded {
                 node_id = self.select_best_child(node_id);
@@ -247,6 +249,7 @@ impl<E: Env + Clone> MCTS<E> {
 
     fn rollout(&mut self, node_id: usize) -> f32 {
         // assert!(node_id < self.nodes.len());
+        // note: checking if env.is_over() before cloning doesn't make much difference
         let mut env = self.nodes[node_id - self.root].env.clone();
         let mut is_over = env.is_over();
         while !is_over {

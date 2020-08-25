@@ -16,41 +16,22 @@ const ROW_7: BitBoard = ROW_1 << 48;
 const ROW_8: BitBoard = ROW_1 << 56;
 // const FULL_BOARD: BitBoard = 0xFFFFFFFFFFFFFFFFu64;
 
-pub struct BitBoardIterator(BitBoard);
-
-impl Iterator for BitBoardIterator {
-    type Item = Square;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.0 == 0 {
-            return None;
-        }
-
-        let sq = self.0.trailing_zeros();
-        self.0 &= self.0.wrapping_sub(1);
-
-        Some(sq)
-    }
-}
-
 pub struct ActionIterator(BitBoard, BitBoard);
 
-impl ActionIterator {
-    // TODO how is this slower???
-    #[inline]
-    fn fast_nth(&mut self, mut n: u32) -> (Square, Square) {
-        while n != 0 {
-            self.0 &= self.0.wrapping_sub(1);
-            self.1 &= self.1.wrapping_sub(1);
-
-            n -= 1;
-        }
-
-        let from_sq = self.0.trailing_zeros();
-        let to_sq = self.1.trailing_zeros();
-        (from_sq, to_sq)
-    }
-}
+// TODO how is this slower???
+// impl ActionIterator {
+//     #[inline]
+//     fn fast_nth(&mut self, mut n: u32) -> (Square, Square) {
+//         while n != 0 {
+//             self.0 &= self.0.wrapping_sub(1);
+//             self.1 &= self.1.wrapping_sub(1);
+//             n -= 1;
+//         }
+//         let from_sq = self.0.trailing_zeros();
+//         let to_sq = self.1.trailing_zeros();
+//         (from_sq, to_sq)
+//     }
+// }
 
 impl Iterator for ActionIterator {
     type Item = (Square, Square);
@@ -126,6 +107,17 @@ impl Env for BitBoardEnv {
     type Action = (Square, Square);
     type ActionIterator =
         std::iter::Chain<std::iter::Chain<ActionIterator, ActionIterator>, ActionIterator>;
+    /*
+    {
+        a: ActionIterator
+        b: {
+            a: ActionIterator
+            b: ActionIterator
+            state: ChainState
+        }
+        state: ChainState
+    }
+    */
 
     fn new() -> BitBoardEnv {
         BitBoardEnv {
@@ -163,7 +155,7 @@ impl Env for BitBoardEnv {
         if self.op.id == color {
             1.0
         } else {
-            0.0 // TODO test out -1.0
+            0.0
         }
     }
 
