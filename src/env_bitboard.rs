@@ -155,7 +155,7 @@ impl Env for BitBoardEnv {
         if self.op.id == color {
             1.0
         } else {
-            0.0
+            -1.0
         }
     }
 

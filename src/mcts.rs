@@ -269,11 +269,7 @@ impl<E: Env + Clone> MCTS<E> {
             node.num_visits += 1.0;
 
             // note this is reversed because its actually the previous node's action that this node's reward is associated with
-            node.reward += if !node.my_action {
-                reward
-            } else {
-                1.0 - reward
-            };
+            node.reward += if !node.my_action { reward } else { -reward };
 
             if node_id == self.root {
                 break;
