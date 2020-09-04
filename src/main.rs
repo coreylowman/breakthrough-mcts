@@ -6,13 +6,12 @@ mod env_bitboard;
 
 mod mcts;
 
-use std::collections::VecDeque;
 use std::io;
 use std::time::Instant;
 
 use env::{Env, BLACK, WHITE};
 use env_bitboard::{BitBoardEnv, PlayerInfo};
-use mcts::{default_node_value, minimax_value, Node, MCTS};
+use mcts::{Node, MCTS};
 
 macro_rules! parse_input {
     ($x:expr, $t:ident) => {
@@ -70,7 +69,7 @@ fn codingame_main() {
     eprintln!("ID={}", id);
 
     let init_start = Instant::now();
-    let mut mcts = MCTS::<BitBoardEnv>::with_capacity(id, 2_500_000, default_node_value, 0);
+    let mut mcts = MCTS::<BitBoardEnv>::with_capacity(id, 2_500_000, 0);
     eprintln!("init time {}ms", init_start.elapsed().as_millis());
 
     if id == BLACK {
@@ -126,8 +125,7 @@ fn codingame_main() {
 }
 
 fn first_explore() {
-    let mut white_mcts =
-        MCTS::<BitBoardEnv>::with_capacity(WHITE, 2_000_000, default_node_value, 0);
+    let mut white_mcts = MCTS::<BitBoardEnv>::with_capacity(WHITE, 2_000_000, 0);
 
     let (num_steps, millis) = white_mcts.explore_n(100_000);
     eprintln!(
@@ -140,8 +138,7 @@ fn first_explore() {
 }
 
 fn timed_first_explore() {
-    let mut white_mcts =
-        MCTS::<BitBoardEnv>::with_capacity(WHITE, 2_000_000, default_node_value, 0);
+    let mut white_mcts = MCTS::<BitBoardEnv>::with_capacity(WHITE, 2_000_000, 0);
 
     let (num_steps, millis) = white_mcts.timed_explore_n(1_000_000);
     eprintln!(
@@ -162,13 +159,11 @@ fn run_game() {
     let mut black_step_ms = 0;
 
     let white_init_start = Instant::now();
-    let mut white_mcts =
-        MCTS::<BitBoardEnv>::with_capacity(WHITE, 1_500_000, default_node_value, 0);
+    let mut white_mcts = MCTS::<BitBoardEnv>::with_capacity(WHITE, 1_500_000, 0);
     println!("white {}ms", white_init_start.elapsed().as_millis());
 
     let black_init_start = Instant::now();
-    let mut black_mcts =
-        MCTS::<BitBoardEnv>::with_capacity(BLACK, 1_500_000, default_node_value, 0);
+    let mut black_mcts = MCTS::<BitBoardEnv>::with_capacity(BLACK, 1_500_000, 0);
     println!("black {}ms", black_init_start.elapsed().as_millis());
 
     let (num_steps, millis) = white_mcts.explore_n(300_000);
@@ -300,22 +295,18 @@ fn run_game() {
     );
 }
 
-fn compare<E: Env + Clone>(
-    white_eval: fn(&VecDeque<Node<E>>, &Node<E>) -> f32,
-    black_eval: fn(&VecDeque<Node<E>>, &Node<E>) -> f32,
-    seed: u64,
-) -> bool {
+fn compare<E: Env + Clone>(seed: u64) -> bool {
     let mut env = E::new();
-    let mut white_mcts = MCTS::<E>::with_capacity(WHITE, 1_500_000, white_eval, seed);
-    let mut black_mcts = MCTS::<E>::with_capacity(BLACK, 1_500_000, black_eval, seed);
+    let mut white_mcts = MCTS::<E>::with_capacity(WHITE, 1_500_000, seed);
+    let mut black_mcts = MCTS::<E>::with_capacity(BLACK, 1_500_000, seed);
 
-    let (num_steps, millis) = white_mcts.explore_n(300_000);
+    let (num_steps, millis) = white_mcts.explore_for(1000);
     let mut action = white_mcts.best_action();
     env.step(&action);
     white_mcts.step_action(&action);
     black_mcts.step_action(&action);
 
-    let (num_steps, millis) = black_mcts.explore_n(300_000);
+    let (num_steps, millis) = black_mcts.explore_for(1000);
     action = black_mcts.best_action();
     env.step(&action);
     white_mcts.step_action(&action);
@@ -323,10 +314,10 @@ fn compare<E: Env + Clone>(
 
     while !env.is_over() {
         let action = if env.turn() == WHITE {
-            let (num_steps, millis) = white_mcts.explore_n(50_000);
+            let (num_steps, millis) = white_mcts.explore_for(100);
             white_mcts.best_action()
         } else {
-            let (num_steps, millis) = black_mcts.explore_n(50_000);
+            let (num_steps, millis) = black_mcts.explore_for(100);
             black_mcts.best_action()
         };
 
@@ -351,22 +342,21 @@ fn local_main() {
         std::mem::size_of::<<env_bitboard::BitBoardEnv as Env>::ActionIterator>()
     );
     first_explore();
+    println!();
     // timed_first_explore();
     // run_game();
 
-    // white default vs black default - black 55% winrate after 400 games
-    // white minimax vs black default - white 60% winrate after 300 games
-    // white default vs black minimax - black 70% winrate after 300 games
     // let mut wins = [0, 0];
     // for i in 0..300 {
-    //     let winner = compare::<BitBoardEnv>(default_node_value, minimax_value, i);
-    //     wins[winner] += 1;
+    //     let winner = compare::<BitBoardEnv>(i);
+    //     wins[winner as usize] += 1;
     //     println!(
-    //         "WHITE {} ({}%) | BLACK {} ({}%)",
-    //         wins[WHITE],
-    //         100.0 * wins[WHITE] as f32 / (i as f32 + 1.0),
-    //         wins[BLACK],
-    //         100.0 * wins[BLACK] as f32 / (i as f32 + 1.0)
+    //         "{:03} games | WHITE {:03} ({:05.2}%) | BLACK {:03} ({:05.2}%)",
+    //         i + 1,
+    //         wins[WHITE as usize],
+    //         100.0 * wins[WHITE as usize] as f32 / (i as f32 + 1.0),
+    //         wins[BLACK as usize],
+    //         100.0 * wins[BLACK as usize] as f32 / (i as f32 + 1.0)
     //     );
     // }
 }

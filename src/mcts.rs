@@ -5,15 +5,14 @@ use std::collections::VecDeque;
 use std::time::Instant;
 
 pub struct Node<E: Env + Clone> {
-    pub parent: usize,                        // 8 bytes
-    pub env: E,                               // 32 bytes
-    pub terminal: bool,                       // 1 byte
-    pub expanded: bool,                       // 1 byte
-    pub my_action: bool,                      // 1 byte
-    pub children: Vec<(E::Action, usize)>,    // 24 bytes
-    pub unvisited_actions: E::ActionIterator, // 64 bytes
-    pub num_visits: f32,                      //4 bytes
-    pub reward: f32,                          // 4 bytes
+    pub parent: usize,                     // 8 bytes
+    pub env: E,                            // 32 bytes
+    pub terminal: bool,                    // 1 byte
+    pub expanded: bool,                    // 1 byte
+    pub my_action: bool,                   // 1 byte
+    pub children: Vec<(E::Action, usize)>, // 24 bytes
+    pub reward: f32,                       // 4 bytes
+    pub num_visits: f32,                   // 4 bytes
 }
 
 impl<E: Env + Clone> Node<E> {
@@ -25,17 +24,14 @@ impl<E: Env + Clone> Node<E> {
             + std::mem::size_of::<E::ActionIterator>()
     }
 
-    pub fn new_root(id: usize) -> Self {
-        let env = E::new();
-        let actions = env.iter_actions();
+    pub fn new_root(my_action: bool) -> Self {
         Node {
             parent: 0,
-            env: env,
+            env: E::new(),
             terminal: false,
             expanded: false,
-            my_action: false,
+            my_action: my_action,
             children: Vec::new(),
-            unvisited_actions: actions,
             num_visits: 0.0,
             reward: 0.0,
         }
@@ -44,7 +40,6 @@ impl<E: Env + Clone> Node<E> {
     pub fn new(parent_id: usize, node: &Self, action: &E::Action) -> Self {
         let mut env = node.env.clone();
         let is_over = env.step(action);
-        let actions = env.iter_actions();
         Node {
             parent: parent_id,
             env: env,
@@ -52,37 +47,16 @@ impl<E: Env + Clone> Node<E> {
             expanded: is_over,
             my_action: !node.my_action,
             children: Vec::new(),
-            unvisited_actions: actions,
             num_visits: 0.0,
             reward: 0.0,
         }
     }
 }
 
-pub fn default_node_value<E: Env + Clone>(nodes: &VecDeque<Node<E>>, node: &Node<E>) -> f32 {
-    node.reward / node.num_visits
-}
-
-pub fn minimax_value<E: Env + Clone>(nodes: &VecDeque<Node<E>>, node: &Node<E>) -> f32 {
-    let mut min_value = std::f32::INFINITY;
-    // let root_id = nodes[0].id;
-
-    // for (i, &child_id) in node.children.iter().enumerate() {
-    //     let child = &nodes[child_id - root_id];
-    //     let value = 1.0 - child.reward / child.num_visits;
-    //     if value < min_value {
-    //         min_value = value;
-    //     }
-    // }
-
-    min_value
-}
-
 pub struct MCTS<E: Env + Clone> {
     pub id: bool,
     pub root: usize,
     pub nodes: VecDeque<Node<E>>,
-    pub evaluator: fn(&VecDeque<Node<E>>, &Node<E>) -> f32,
     pub rng: StdRng, // note: this is about the same performance as SmallRng or any of the XorShiftRngs that got moved to the xorshift crate
 }
 
@@ -96,36 +70,15 @@ impl<E: Env + Clone> MCTS<E> {
         mem
     }
 
-    pub fn new(id: bool, evaluator: fn(&VecDeque<Node<E>>, &Node<E>) -> f32) -> Self {
-        let mut root = Node::new_root(0);
-        root.my_action = id == WHITE;
-        let mut nodes = VecDeque::new();
-        nodes.push_back(root);
-        Self {
-            id: id,
-            root: 0,
-            nodes: nodes,
-            rng: StdRng::seed_from_u64(0),
-            evaluator: evaluator,
-        }
-    }
-
-    pub fn with_capacity(
-        id: bool,
-        capacity: usize,
-        evaluator: fn(&VecDeque<Node<E>>, &Node<E>) -> f32,
-        seed: u64,
-    ) -> Self {
-        let mut root = Node::new_root(0);
-        root.my_action = id == WHITE;
+    pub fn with_capacity(id: bool, capacity: usize, seed: u64) -> Self {
         let mut nodes = VecDeque::with_capacity(capacity);
+        let root = Node::new_root(id == WHITE);
         nodes.push_back(root);
         Self {
             id: id,
             root: 0,
             nodes: nodes,
             rng: StdRng::seed_from_u64(seed),
-            evaluator: evaluator,
         }
     }
 
@@ -164,7 +117,7 @@ impl<E: Env + Clone> MCTS<E> {
 
         for (i, &(_, child_id)) in root.children.iter().enumerate() {
             let child = &self.nodes[child_id - self.root];
-            let value = (self.evaluator)(&self.nodes, child);
+            let value = child.reward / child.num_visits;
             if value > best_value {
                 best_value = value;
                 best_action_ind = i;
@@ -175,27 +128,82 @@ impl<E: Env + Clone> MCTS<E> {
     }
 
     fn explore(&mut self) {
-        let node_id = self.select_node();
-        let reward = self.rollout(node_id);
-        self.backprop(node_id, reward);
-    }
-
-    fn select_node(&mut self) -> usize {
         let mut node_id = self.root;
         loop {
             // assert!(node_id < self.nodes.len());
-            let node = &self.nodes[node_id - self.root];
+            let node = &mut self.nodes[node_id - self.root];
             if node.terminal {
-                // TODO check if a double fetch of the node happens from this
-                return node_id;
+                let reward = node.env.reward(self.id);
+                self.backprop(node_id, reward, 1.0);
+                return;
             } else if node.expanded {
                 node_id = self.select_best_child(node_id);
             } else {
-                return self.select_unexpanded_child(node_id);
+                // reserve max number of actions for children to reduce allocations
+                node.children.reserve_exact(48);
+
+                // we are adding all children at once, so this node is about to be expanded
+                node.expanded = true;
+
+                let mut total_reward = 0.0;
+                let mut total_visits = 0.0;
+
+                // iterate through all the children!
+                for action in node.env.iter_actions() {
+                    // TODO calculate this as offset from beginning of expansion?
+                    let child_id = self.next_node_id();
+
+                    // create the child node and sample a reward from it
+                    let (child_node, reward) = {
+                        let node = &mut self.nodes[node_id - self.root];
+                        node.children.push((action, child_id));
+
+                        // create the child node... note we will be modifying num_visits and reward later, so mutable
+                        let mut child_node = Node::new(node_id, &node, &action);
+
+                        // rollout child to get initial reward
+                        let reward = self.rollout(child_node.env.clone());
+
+                        // store initial reward & 1 visit
+                        child_node.num_visits = 1.0;
+                        child_node.reward = reward;
+
+                        (child_node, reward)
+                    };
+
+                    self.nodes.push_back(child_node);
+
+                    // keep track of reward here so we can backprop 1 time for all the new children
+                    total_reward += reward;
+                    total_visits += 1.0;
+                }
+
+                // backprop all new children rewards back up
+                self.backprop(node_id, total_reward, total_visits);
+
+                // we've expanded one node now, 1 round of exploring done!
+                return;
             }
         }
     }
 
+    // fn select_node(&mut self) -> usize {
+    //     let mut node_id = self.root;
+    //     loop {
+    //         // assert!(node_id < self.nodes.len());
+    //         let node = &self.nodes[node_id - self.root];
+    //         if node.terminal {
+    //             // TODO check if a double fetch of the node happens from this
+    //             return node_id;
+    //         } else if node.expanded {
+    //             node_id = self.select_best_child(node_id);
+    //         } else {
+    //             return self.select_unvisited_child(node_id);
+    //         }
+    //     }
+    // }
+
+    // #[inline(never)]
     fn select_best_child(&mut self, node_id: usize) -> usize {
         // assert!(node_id < self.nodes.len());
 
@@ -204,13 +212,12 @@ impl<E: Env + Clone> MCTS<E> {
         let mut best_child = 0;
         let mut best_value = -std::f32::INFINITY;
 
-        let parent_visits = node.num_visits.log(2.0);
+        let visits = node.num_visits.log(2.0);
 
         for &(_, child_id) in node.children.iter() {
             let child = &self.nodes[child_id - self.root];
 
-            let value =
-                child.reward / child.num_visits + (2.0 * parent_visits / child.num_visits).sqrt();
+            let value = child.reward / child.num_visits + (2.0 * visits / child.num_visits).sqrt();
 
             if value > best_value {
                 best_value = value;
@@ -222,35 +229,34 @@ impl<E: Env + Clone> MCTS<E> {
     }
 
     // #[inline(never)]
-    fn select_unexpanded_child(&mut self, parent_id: usize) -> usize {
-        let child_id = self.next_node_id();
+    // fn select_unvisited_child(&mut self, parent_id: usize) -> usize {
+    //     let child_id = self.next_node_id();
 
-        let child_node = {
-            let node = &mut self.nodes[parent_id - self.root];
-            let action = node.unvisited_actions.next().unwrap();
-            if node.children.capacity() == 0 {
-                // finally allocate space for max possible actions if we are looking down this node
-                node.children.reserve_exact(48);
-            }
-            node.children.push((action, child_id));
-            if node.unvisited_actions.size_hint().0 == 0 {
-                node.expanded = true;
-                // note: very little impact to memory
-                // node.unvisited_actions.shrink_to_fit();
-                // node.actions.shrink_to_fit();
-                // node.children.shrink_to_fit();
-            }
-            Node::new(parent_id, &node, &action)
-        };
-        self.nodes.push_back(child_node);
+    //     let child_node = {
+    //         let node = &mut self.nodes[parent_id - self.root];
+    //         let action = node.unvisited_actions.next().unwrap();
+    //         if node.children.capacity() == 0 {
+    //             // finally allocate space for max possible actions if we are looking down this node
+    //             node.children.reserve_exact(48);
+    //         }
+    //         node.children.push((action, child_id));
+    //         if node.unvisited_actions.size_hint().0 == 0 {
+    //             node.expanded = true;
+    //             // note: very little impact to memory
+    //             // node.unvisited_actions.shrink_to_fit();
+    //             // node.actions.shrink_to_fit();
+    //             // node.children.shrink_to_fit();
+    //         }
+    //         Node::new(parent_id, &node, &action)
+    //     };
+    //     self.nodes.push_back(child_node);
 
-        child_id
-    }
+    //     child_id
+    // }
 
-    fn rollout(&mut self, node_id: usize) -> f32 {
+    fn rollout(&mut self, mut env: E) -> f32 {
         // assert!(node_id < self.nodes.len());
         // note: checking if env.is_over() before cloning doesn't make much difference
-        let mut env = self.nodes[node_id - self.root].env.clone();
         let mut is_over = env.is_over();
         while !is_over {
             let action = env.get_random_action(&mut self.rng);
@@ -259,15 +265,16 @@ impl<E: Env + Clone> MCTS<E> {
         env.reward(self.id)
     }
 
-    fn backprop(&mut self, leaf_node_id: usize, reward: f32) {
+    fn backprop(&mut self, leaf_node_id: usize, reward: f32, num_visits: f32) {
         let mut node_id = leaf_node_id;
         loop {
             // assert!(node_id < self.nodes.len());
 
             let node = &mut self.nodes[node_id - self.root];
 
-            node.num_visits += 1.0;
+            node.num_visits += num_visits;
 
+            // TODO multiply reward by -1 instead of this if every time
             // note this is reversed because its actually the previous node's action that this node's reward is associated with
             node.reward += if !node.my_action { reward } else { -reward };
 
@@ -291,10 +298,15 @@ impl<E: Env + Clone> MCTS<E> {
 
     pub fn explore_n(&mut self, n: usize) -> (usize, u128) {
         let start = Instant::now();
-        for _i in 0..n {
+        let start_n = self.nodes.len();
+        let target_n = start_n + n;
+        for _ in 0..n {
             self.explore();
+            if self.nodes.len() >= target_n {
+                break;
+            }
         }
-        (n, start.elapsed().as_millis())
+        (self.nodes.len() - start_n, start.elapsed().as_millis())
     }
 
     pub fn timed_explore_n(&mut self, n: usize) -> (usize, u128) {
@@ -307,41 +319,41 @@ impl<E: Env + Clone> MCTS<E> {
         let mut select_unexpanded_n = 0;
 
         let start = Instant::now();
-        for _i in 0..n {
-            let select_start = Instant::now();
-            // let node_id = self.select_node();
-            let node_id = {
-                let mut node_id = self.root;
-                loop {
-                    // assert!(node_id < self.nodes.len());
-                    let node = &self.nodes[node_id - self.root];
-                    if node.terminal {
-                        break;
-                    } else if node.expanded {
-                        select_best_n += 1;
-                        let select_best_start = Instant::now();
-                        node_id = self.select_best_child(node_id);
-                        select_best_ns += select_best_start.elapsed().as_nanos();
-                    } else {
-                        select_unexpanded_n += 1;
-                        let select_unexpanded_start = Instant::now();
-                        node_id = self.select_unexpanded_child(node_id);
-                        select_unexpanded_ns += select_unexpanded_start.elapsed().as_nanos();
-                        break;
-                    }
-                }
-                node_id
-            };
-            select_ns += select_start.elapsed().as_nanos();
+        // for _i in 0..n {
+        //     let select_start = Instant::now();
+        //     // let node_id = self.select_node();
+        //     let node_id = {
+        //         let mut node_id = self.root;
+        //         loop {
+        //             // assert!(node_id < self.nodes.len());
+        //             let node = &self.nodes[node_id - self.root];
+        //             if node.terminal {
+        //                 break;
+        //             } else if node.expanded {
+        //                 select_best_n += 1;
+        //                 let select_best_start = Instant::now();
+        //                 node_id = self.select_best_child(node_id);
+        //                 select_best_ns += select_best_start.elapsed().as_nanos();
+        //             } else {
+        //                 select_unexpanded_n += 1;
+        //                 let select_unexpanded_start = Instant::now();
+        //                 node_id = self.select_unvisited_child(node_id);
+        //                 select_unexpanded_ns += select_unexpanded_start.elapsed().as_nanos();
+        //                 break;
+        //             }
+        //         }
+        //         node_id
+        //     };
+        //     select_ns += select_start.elapsed().as_nanos();
 
-            let rollout_start = Instant::now();
-            let reward = self.rollout(node_id);
-            rollout_ns += rollout_start.elapsed().as_nanos();
+        //     let rollout_start = Instant::now();
+        //     let reward = self.rollout(node_id);
+        //     rollout_ns += rollout_start.elapsed().as_nanos();
 
-            let backprop_start = Instant::now();
-            self.backprop(node_id, reward);
-            backprop_ns += backprop_start.elapsed().as_nanos();
-        }
+        //     let backprop_start = Instant::now();
+        //     self.backprop(node_id, reward);
+        //     backprop_ns += backprop_start.elapsed().as_nanos();
+        // }
 
         println!(
             "select {}ns | rollout {}ns | backprop {}ns",
@@ -350,9 +362,11 @@ impl<E: Env + Clone> MCTS<E> {
             backprop_ns as f32 / n as f32
         );
         println!(
-            "select_best_child {}ns | select_unexpanded_child {}ns",
+            "select_best_child {}ns ({}) | select_unexpanded_child {}ns ({})",
             select_best_ns as f32 / select_best_n as f32,
-            select_unexpanded_ns as f32 / select_unexpanded_n as f32
+            select_best_n,
+            select_unexpanded_ns as f32 / select_unexpanded_n as f32,
+            select_unexpanded_n,
         );
         (n, start.elapsed().as_millis())
     }
