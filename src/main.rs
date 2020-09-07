@@ -295,30 +295,34 @@ fn run_game() {
     );
 }
 
-fn compare<E: Env + Clone>(seed: u64) -> bool {
+fn compare<E: Env + Clone>(
+    seed: u64,
+    white_action_fn: fn(&MCTS<E>) -> E::Action,
+    black_action_fn: fn(&MCTS<E>) -> E::Action,
+) -> bool {
     let mut env = E::new();
     let mut white_mcts = MCTS::<E>::with_capacity(WHITE, 1_500_000, seed);
     let mut black_mcts = MCTS::<E>::with_capacity(BLACK, 1_500_000, seed);
 
-    let (num_steps, millis) = white_mcts.explore_for(1000);
-    let mut action = white_mcts.best_action();
+    let (num_steps, millis) = white_mcts.explore_n(100_000);
+    let mut action = white_action_fn(&white_mcts);
     env.step(&action);
     white_mcts.step_action(&action);
     black_mcts.step_action(&action);
 
-    let (num_steps, millis) = black_mcts.explore_for(1000);
-    action = black_mcts.best_action();
+    let (num_steps, millis) = black_mcts.explore_n(100_000);
+    action = black_action_fn(&black_mcts);
     env.step(&action);
     white_mcts.step_action(&action);
     black_mcts.step_action(&action);
 
     while !env.is_over() {
         let action = if env.turn() == WHITE {
-            let (num_steps, millis) = white_mcts.explore_for(100);
-            white_mcts.best_action()
+            let (num_steps, millis) = white_mcts.explore_n(5000);
+            white_action_fn(&white_mcts)
         } else {
-            let (num_steps, millis) = black_mcts.explore_for(100);
-            black_mcts.best_action()
+            let (num_steps, millis) = black_mcts.explore_n(5000);
+            black_action_fn(&black_mcts)
         };
 
         env.step(&action);
@@ -348,7 +352,11 @@ fn local_main() {
 
     // let mut wins = [0, 0];
     // for i in 0..300 {
-    //     let winner = compare::<BitBoardEnv>(i);
+    //     let winner = compare::<BitBoardEnv>(
+    //         i,
+    //         |mcts: &MCTS<BitBoardEnv>| mcts.best_action(),
+    //         |mcts: &MCTS<BitBoardEnv>| mcts.best_action(),
+    //     );
     //     wins[winner as usize] += 1;
     //     println!(
     //         "{:03} games | WHITE {:03} ({:05.2}%) | BLACK {:03} ({:05.2}%)",

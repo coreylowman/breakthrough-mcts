@@ -214,6 +214,7 @@ impl<E: Env + Clone> MCTS<E> {
 
         let visits = node.num_visits.log(2.0);
 
+        // TODO vectorize this since we know all children are next to each other
         for &(_, child_id) in node.children.iter() {
             let child = &self.nodes[child_id - self.root];
 
