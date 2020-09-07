@@ -127,6 +127,28 @@ impl<E: Env + Clone> MCTS<E> {
         root.children[best_action_ind].0.clone()
     }
 
+    pub fn negamax(&self, depth: u8) -> E::Action {
+        self.negamax_search(self.root, depth, -1.0).0.unwrap()
+    }
+
+    fn negamax_search(&self, node_id: usize, depth: u8, color: f32) -> (Option<E::Action>, f32) {
+        let node = &self.nodes[node_id - self.root];
+        if depth == 0 || node.terminal || !node.expanded {
+            return (None, color * node.reward / node.num_visits);
+        }
+
+        let mut best_value = -std::f32::INFINITY;
+        let mut best_action_ind = 0;
+        for (i, &(_, child_id)) in node.children.iter().enumerate() {
+            let (_, v) = self.negamax_search(child_id, depth - 1, -color);
+            if -v > best_value {
+                best_value = -v;
+                best_action_ind = i;
+            }
+        }
+        (Some(node.children[best_action_ind].0), best_value)
+    }
+
     fn explore(&mut self) {
         let mut node_id = self.root;
         loop {

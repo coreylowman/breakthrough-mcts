@@ -318,10 +318,10 @@ fn compare<E: Env + Clone>(
 
     while !env.is_over() {
         let action = if env.turn() == WHITE {
-            let (num_steps, millis) = white_mcts.explore_n(5000);
+            let (num_steps, millis) = white_mcts.explore_n(30_000);
             white_action_fn(&white_mcts)
         } else {
-            let (num_steps, millis) = black_mcts.explore_n(5000);
+            let (num_steps, millis) = black_mcts.explore_n(30_000);
             black_action_fn(&black_mcts)
         };
 
@@ -350,12 +350,14 @@ fn local_main() {
     // timed_first_explore();
     // run_game();
 
+    // 300 games | WHITE 182 (60.67%) | BLACK 118 (39.33%)
+    // 300 games | WHITE 137 (45.67%) | BLACK 163 (54.33%)
     // let mut wins = [0, 0];
     // for i in 0..300 {
     //     let winner = compare::<BitBoardEnv>(
     //         i,
     //         |mcts: &MCTS<BitBoardEnv>| mcts.best_action(),
-    //         |mcts: &MCTS<BitBoardEnv>| mcts.best_action(),
+    //         |mcts: &MCTS<BitBoardEnv>| mcts.negamax(2),
     //     );
     //     wins[winner as usize] += 1;
     //     println!(
