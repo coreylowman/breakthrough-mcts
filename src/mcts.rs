@@ -1,7 +1,6 @@
 use crate::env::{Env, BLACK, WHITE};
 use crate::rand::rngs::StdRng;
 use crate::rand::SeedableRng;
-use std::collections::VecDeque;
 use std::time::Instant;
 
 pub struct Node<E: Env + Clone> {
@@ -56,7 +55,7 @@ impl<E: Env + Clone> Node<E> {
 pub struct MCTS<E: Env + Clone> {
     pub id: bool,
     pub root: usize,
-    pub nodes: VecDeque<Node<E>>,
+    pub nodes: Vec<Node<E>>,
     pub rng: StdRng, // note: this is about the same performance as SmallRng or any of the XorShiftRngs that got moved to the xorshift crate
 }
 
@@ -71,9 +70,9 @@ impl<E: Env + Clone> MCTS<E> {
     }
 
     pub fn with_capacity(id: bool, capacity: usize, seed: u64) -> Self {
-        let mut nodes = VecDeque::with_capacity(capacity);
+        let mut nodes = Vec::with_capacity(capacity);
         let root = Node::new_root(id == WHITE);
-        nodes.push_back(root);
+        nodes.push(root);
         Self {
             id: id,
             root: 0,
@@ -100,7 +99,7 @@ impl<E: Env + Clone> MCTS<E> {
             None => {
                 let child_node = Node::new(0, &self.nodes[self.root - self.root], action);
                 self.nodes.clear();
-                self.nodes.push_back(child_node);
+                self.nodes.push(child_node);
                 0
             }
         };
@@ -194,7 +193,7 @@ impl<E: Env + Clone> MCTS<E> {
                         (child_node, reward)
                     };
 
-                    self.nodes.push_back(child_node);
+                    self.nodes.push(child_node);
 
                     // keep track of reward here so we can backprop 1 time for all the new children
                     total_reward += reward;
