@@ -196,6 +196,7 @@ impl<E: Env + Clone> MCTS<E> {
 
         let visits = node.num_visits.log(2.0);
 
+        // TODO try slices again after symmetry update... lower branching factor may result in better cache usage & deeper tree means this function gets called more
         // note: using a slide of self.nodes[first_child..last_child] doesn't result in a performance increase
         for &(_, child_id, _) in node.children.iter() {
             let child = &self.nodes[child_id - self.root];
