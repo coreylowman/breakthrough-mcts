@@ -17,22 +17,6 @@ const ROW_8: BitBoard = ROW_1 << 56;
 // const FULL_BOARD: BitBoard = 0xFFFFFFFFFFFFFFFFu64;
 
 pub struct ActionIterator(BitBoard, BitBoard);
-
-// TODO how is this slower???
-// impl ActionIterator {
-//     #[inline]
-//     fn fast_nth(&mut self, mut n: u32) -> (Square, Square) {
-//         while n != 0 {
-//             self.0 &= self.0.wrapping_sub(1);
-//             self.1 &= self.1.wrapping_sub(1);
-//             n -= 1;
-//         }
-//         let from_sq = self.0.trailing_zeros();
-//         let to_sq = self.1.trailing_zeros();
-//         (from_sq, to_sq)
-//     }
-// }
-
 impl Iterator for ActionIterator {
     type Item = (Square, Square);
 
@@ -48,10 +32,6 @@ impl Iterator for ActionIterator {
         self.1 &= self.1.wrapping_sub(1);
 
         Some((from_sq, to_sq))
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.0 as usize, None)
     }
 }
 
@@ -107,17 +87,15 @@ impl Env for BitBoardEnv {
     type Action = (Square, Square);
     type ActionIterator =
         std::iter::Chain<std::iter::Chain<ActionIterator, ActionIterator>, ActionIterator>;
-    /*
-    {
-        a: ActionIterator
-        b: {
-            a: ActionIterator
-            b: ActionIterator
-            state: ChainState
-        }
-        state: ChainState
+
+    fn symmetry_of(action: &Self::Action) -> Self::Action {
+        let (from, to) = *action;
+        let from_x = 7 - from % 8;
+        let from_y = from / 8;
+        let to_x = 7 - to % 8;
+        let to_y = to / 8;
+        (from_y * 8 + from_x, to_y * 8 + to_x)
     }
-    */
 
     fn new() -> BitBoardEnv {
         BitBoardEnv {

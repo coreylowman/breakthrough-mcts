@@ -9,6 +9,8 @@ pub trait Env {
     type Action: Eq + Clone + Copy + std::fmt::Debug;
     type ActionIterator: Iterator<Item = Self::Action>;
 
+    fn symmetry_of(action: &Self::Action) -> Self::Action;
+
     fn new() -> Self;
     fn turn(&self) -> bool;
     fn is_over(&self) -> bool;

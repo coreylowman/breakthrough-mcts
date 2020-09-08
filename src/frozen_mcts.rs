@@ -4,14 +4,14 @@ use crate::rand::SeedableRng;
 use std::time::Instant;
 
 pub struct Node<E: Env + Clone> {
-    pub parent: usize,                                        // 8 bytes
-    pub env: E,                                               // 32 bytes
-    pub terminal: bool,                                       // 1 byte
-    pub expanded: bool,                                       // 1 byte
-    pub my_action: bool,                                      // 1 byte
-    pub children: Vec<(E::Action, usize, Option<E::Action>)>, // 24 bytes
-    pub reward: f32,                                          // 4 bytes
-    pub num_visits: f32,                                      // 4 bytes
+    pub parent: usize,                     // 8 bytes
+    pub env: E,                            // 32 bytes
+    pub terminal: bool,                    // 1 byte
+    pub expanded: bool,                    // 1 byte
+    pub my_action: bool,                   // 1 byte
+    pub children: Vec<(E::Action, usize)>, // 24 bytes
+    pub reward: f32,                       // 4 bytes
+    pub num_visits: f32,                   // 4 bytes
 }
 
 impl<E: Env + Clone> Node<E> {
@@ -57,7 +57,6 @@ pub struct MCTS<E: Env + Clone> {
     pub root: usize,
     pub nodes: Vec<Node<E>>,
     pub rng: StdRng, // note: this is about the same performance as SmallRng or any of the XorShiftRngs that got moved to the xorshift crate
-    pub in_symmetry: bool,
 }
 
 impl<E: Env + Clone> MCTS<E> {
@@ -79,7 +78,6 @@ impl<E: Env + Clone> MCTS<E> {
             root: 0,
             nodes: nodes,
             rng: StdRng::seed_from_u64(seed),
-            in_symmetry: false,
         }
     }
 
@@ -91,16 +89,14 @@ impl<E: Env + Clone> MCTS<E> {
         self.root = match self.nodes[self.root - self.root]
             .children
             .iter()
-            .position(|(a, c, sym_a)| a == action || (sym_a.is_some() && sym_a.unwrap() == *action))
+            .position(|(a, c)| a == action)
         {
             Some(action_index) => {
-                let (a, new_root, _) = self.nodes[self.root - self.root].children[action_index];
-                self.in_symmetry = a != *action;
+                let (_, new_root) = self.nodes[self.root - self.root].children[action_index];
                 drop(self.nodes.drain(0..new_root - self.root));
                 new_root
             }
             None => {
-                self.in_symmetry = false;
                 let child_node = Node::new(0, &self.nodes[self.root - self.root], action);
                 self.nodes.clear();
                 self.nodes.push(child_node);
@@ -112,12 +108,13 @@ impl<E: Env + Clone> MCTS<E> {
     }
 
     pub fn best_action(&self) -> E::Action {
+        // TODO replace this with depth limited alpha beta pruning
         let root = &self.nodes[self.root - self.root];
 
         let mut best_action_ind = 0;
         let mut best_value = -std::f32::INFINITY;
 
-        for (i, &(_, child_id, _)) in root.children.iter().enumerate() {
+        for (i, &(_, child_id)) in root.children.iter().enumerate() {
             let child = &self.nodes[child_id - self.root];
             let value = child.reward / child.num_visits;
             if value > best_value {
@@ -126,15 +123,10 @@ impl<E: Env + Clone> MCTS<E> {
             }
         }
 
-        if self.in_symmetry && root.children[best_action_ind].2.is_some() {
-            root.children[best_action_ind].2.unwrap().clone()
-        } else {
-            root.children[best_action_ind].0.clone()
-        }
+        root.children[best_action_ind].0.clone()
     }
 
     pub fn negamax(&self, depth: u8) -> E::Action {
-        // TODO add alpha beta pruning to this
         self.negamax_search(self.root, depth, -1.0).0.unwrap()
     }
 
@@ -146,14 +138,13 @@ impl<E: Env + Clone> MCTS<E> {
 
         let mut best_value = -std::f32::INFINITY;
         let mut best_action_ind = 0;
-        for (i, &(_, child_id, _)) in node.children.iter().enumerate() {
+        for (i, &(_, child_id)) in node.children.iter().enumerate() {
             let (_, v) = self.negamax_search(child_id, depth - 1, -color);
             if -v > best_value {
                 best_value = -v;
                 best_action_ind = i;
             }
         }
-        // TODO add symmetry to this
         (Some(node.children[best_action_ind].0), best_value)
     }
 
@@ -178,31 +169,15 @@ impl<E: Env + Clone> MCTS<E> {
                 let mut total_reward = 0.0;
                 let mut total_visits = 0.0;
 
-                let actions = node.env.actions();
-
-                let mut closed = Vec::new();
-
                 // iterate through all the children!
-                for &action in actions.iter() {
-                    if closed.contains(&action) {
-                        continue;
-                    }
-
-                    closed.push(action);
-                    let symmetrical_action = E::symmetry_of(&action);
-                    let symmetry = if actions.contains(&symmetrical_action) {
-                        closed.push(symmetrical_action);
-                        Some(symmetrical_action)
-                    } else {
-                        None
-                    };
-
+                // TODO take advantage of any symmetry that exist in the game
+                for action in node.env.iter_actions() {
                     let child_id = self.next_node_id();
 
                     // create the child node and sample a reward from it
                     let (child_node, reward) = {
                         let node = &mut self.nodes[node_id - self.root];
-                        node.children.push((action, child_id, symmetry));
+                        node.children.push((action, child_id));
 
                         // create the child node... note we will be modifying num_visits and reward later, so mutable
                         let mut child_node = Node::new(node_id, &node, &action);
@@ -260,7 +235,7 @@ impl<E: Env + Clone> MCTS<E> {
         let visits = node.num_visits.log(2.0);
 
         // note: using a slide of self.nodes[first_child..last_child] doesn't result in a performance increase
-        for &(_, child_id, _) in node.children.iter() {
+        for &(_, child_id) in node.children.iter() {
             let child = &self.nodes[child_id - self.root];
 
             let value = child.reward / child.num_visits + (2.0 * visits / child.num_visits).sqrt();
@@ -319,6 +294,7 @@ impl<E: Env + Clone> MCTS<E> {
             let node = &mut self.nodes[node_id - self.root];
 
             node.num_visits += num_visits;
+
             // TODO multiply reward by -1 instead of this if every time
             // note this is reversed because its actually the previous node's action that this node's reward is associated with
             node.reward += if !node.my_action { reward } else { -reward };

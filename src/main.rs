@@ -4,6 +4,7 @@ mod env;
 mod env_bitboard;
 // mod env_naive;
 
+mod frozen_mcts;
 mod mcts;
 
 use std::io;
@@ -11,6 +12,7 @@ use std::time::Instant;
 
 use env::{Env, BLACK, WHITE};
 use env_bitboard::{BitBoardEnv, PlayerInfo};
+use frozen_mcts::MCTS as FrozenMCTS;
 use mcts::{Node, MCTS};
 
 macro_rules! parse_input {
@@ -145,7 +147,7 @@ fn first_explore() {
         total[depth] += 1;
         if node.expanded {
             expanded[depth] += 1;
-            for &(_, child_id) in node.children.iter() {
+            for &(_, child_id, _) in node.children.iter() {
                 open.push((child_id, depth + 1));
             }
         }
@@ -326,21 +328,21 @@ fn run_game() {
 
 fn compare<E: Env + Clone>(
     seed: u64,
-    white_action_fn: fn(&MCTS<E>) -> E::Action,
-    black_action_fn: fn(&MCTS<E>) -> E::Action,
+    // white_action_fn: fn(&MCTS<E>) -> E::Action,
+    // black_action_fn: fn(&MCTS<E>) -> E::Action,
 ) -> bool {
     let mut env = E::new();
-    let mut white_mcts = MCTS::<E>::with_capacity(WHITE, 1_500_000, seed);
+    let mut white_mcts = FrozenMCTS::<E>::with_capacity(WHITE, 1_500_000, seed);
     let mut black_mcts = MCTS::<E>::with_capacity(BLACK, 1_500_000, seed);
 
     let (num_steps, millis) = white_mcts.explore_n(100_000);
-    let mut action = white_action_fn(&white_mcts);
+    let mut action = white_mcts.best_action();
     env.step(&action);
     white_mcts.step_action(&action);
     black_mcts.step_action(&action);
 
     let (num_steps, millis) = black_mcts.explore_n(100_000);
-    action = black_action_fn(&black_mcts);
+    action = black_mcts.best_action();
     env.step(&action);
     white_mcts.step_action(&action);
     black_mcts.step_action(&action);
@@ -348,10 +350,10 @@ fn compare<E: Env + Clone>(
     while !env.is_over() {
         let action = if env.turn() == WHITE {
             let (num_steps, millis) = white_mcts.explore_n(30_000);
-            white_action_fn(&white_mcts)
+            white_mcts.best_action()
         } else {
             let (num_steps, millis) = black_mcts.explore_n(30_000);
-            black_action_fn(&black_mcts)
+            black_mcts.best_action()
         };
 
         env.step(&action);
@@ -379,23 +381,23 @@ fn local_main() {
     // timed_first_explore();
     // run_game();
 
-    // let mut wins = [0, 0];
-    // for i in 0..300 {
-    //     let winner = compare::<BitBoardEnv>(
-    //         i,
-    //         |mcts: &MCTS<BitBoardEnv>| mcts.best_action(),
-    //         |mcts: &MCTS<BitBoardEnv>| mcts.negamax(2),
-    //     );
-    //     wins[winner as usize] += 1;
-    //     println!(
-    //         "{:03} games | WHITE {:03} ({:05.2}%) | BLACK {:03} ({:05.2}%)",
-    //         i + 1,
-    //         wins[WHITE as usize],
-    //         100.0 * wins[WHITE as usize] as f32 / (i as f32 + 1.0),
-    //         wins[BLACK as usize],
-    //         100.0 * wins[BLACK as usize] as f32 / (i as f32 + 1.0)
-    //     );
-    // }
+    let mut wins = [0, 0];
+    for i in 0..300 {
+        let winner = compare::<BitBoardEnv>(
+            i,
+            // |mcts: &MCTS<BitBoardEnv>| mcts.best_action(),
+            // |mcts: &MCTS<BitBoardEnv>| mcts.negamax(2),
+        );
+        wins[winner as usize] += 1;
+        println!(
+            "{:03} games | WHITE {:03} ({:05.2}%) | BLACK {:03} ({:05.2}%)",
+            i + 1,
+            wins[WHITE as usize],
+            100.0 * wins[WHITE as usize] as f32 / (i as f32 + 1.0),
+            wins[BLACK as usize],
+            100.0 * wins[BLACK as usize] as f32 / (i as f32 + 1.0)
+        );
+    }
 }
 
 fn main() {
