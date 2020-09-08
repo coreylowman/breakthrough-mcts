@@ -171,6 +171,7 @@ impl<E: Env + Clone> MCTS<E> {
                 let mut total_visits = 0.0;
 
                 // iterate through all the children!
+                // TODO take advantage of any symmetry that exist in the game
                 for action in node.env.iter_actions() {
                     // TODO calculate this as offset from beginning of expansion?
                     let child_id = self.next_node_id();

@@ -135,6 +135,35 @@ fn first_explore() {
         millis,
         white_mcts.nodes.len(),
     );
+
+    let mut expanded = [0; 10];
+    let mut total = [0; 10];
+    let mut open = vec![(0, 0)];
+    while open.len() > 0 {
+        let (node_id, depth) = open.pop().unwrap();
+        let node = &white_mcts.nodes[node_id];
+        total[depth] += 1;
+        if node.expanded {
+            expanded[depth] += 1;
+            for &(_, child_id) in node.children.iter() {
+                open.push((child_id, depth + 1));
+            }
+        }
+    }
+
+    for depth in 0..10 {
+        println!(
+            "Depth {:<02} | {:<06} / {:<06} ({:<06.02}%)",
+            depth,
+            expanded[depth],
+            total[depth],
+            if total[depth] == 0 {
+                0.0
+            } else {
+                100.0 * expanded[depth] as f32 / total[depth] as f32
+            }
+        );
+    }
 }
 
 fn timed_first_explore() {
@@ -350,8 +379,6 @@ fn local_main() {
     // timed_first_explore();
     // run_game();
 
-    // 300 games | WHITE 182 (60.67%) | BLACK 118 (39.33%)
-    // 300 games | WHITE 137 (45.67%) | BLACK 163 (54.33%)
     // let mut wins = [0, 0];
     // for i in 0..300 {
     //     let winner = compare::<BitBoardEnv>(
