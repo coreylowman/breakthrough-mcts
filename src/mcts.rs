@@ -86,6 +86,7 @@ impl<E: Env + Clone> MCTS<E> {
     }
 
     pub fn step_action(&mut self, action: &E::Action) {
+        // note: this function attempts to drop obviously unused nodes in order to reduce memory usage
         self.root = match self.nodes[self.root - self.root]
             .children
             .iter()
@@ -174,63 +175,8 @@ impl<E: Env + Clone> MCTS<E> {
             } else if node.expanded {
                 node_id = self.select_best_child(node_id);
             } else {
-                // reserve max number of actions for children to reduce allocations
-                node.children.reserve_exact(48);
-
-                // we are adding all children at once, so this node is about to be expanded
-                node.expanded = true;
-
-                let mut total_reward = 0.0;
-                let mut total_visits = 0.0;
-
-                let actions = node.env.actions();
-                let mut closed = Vec::with_capacity(2 * actions.len());
-
-                // iterate through all the children!
-                for &action in actions.iter() {
-                    // skip any actions that we've already added (possible because of symmetric actions)
-                    if closed.contains(&action) {
-                        continue;
-                    }
-
-                    // don't look at this action anymore
-                    closed.push(action);
-
-                    // add the symmetric action to closed if its a valid action... and keep track of it in children
-                    let symmetrical_action = E::symmetry_of(&action);
-                    let symmetry = if actions.contains(&symmetrical_action) {
-                        closed.push(symmetrical_action);
-                        Some(symmetrical_action)
-                    } else {
-                        None
-                    };
-
-                    let child_id = self.next_node_id();
-
-                    // create the child node and sample a reward from it
-                    let (child_node, reward) = {
-                        let node = &mut self.nodes[node_id - self.root];
-                        node.children.push((action, child_id, symmetry));
-
-                        // create the child node... note we will be modifying num_visits and reward later, so mutable
-                        let mut child_node = Node::new(node_id, &node, &action);
-
-                        // rollout child to get initial reward
-                        let reward = self.rollout(child_node.env.clone());
-
-                        // store initial reward & 1 visit
-                        child_node.num_visits = 1.0;
-                        child_node.reward = reward;
-
-                        (child_node, reward)
-                    };
-
-                    self.nodes.push(child_node);
-
-                    // keep track of reward here so we can backprop 1 time for all the new children
-                    total_reward += reward;
-                    total_visits += 1.0;
-                }
+                // expand all children at once
+                let (total_reward, total_visits) = self.expand_all_children(node_id);
 
                 // backprop all new children rewards back up
                 self.backprop(node_id, total_reward, total_visits);
@@ -243,7 +189,6 @@ impl<E: Env + Clone> MCTS<E> {
 
     fn select_best_child(&mut self, node_id: usize) -> usize {
         // assert!(node_id < self.nodes.len());
-
         let node = &self.nodes[node_id - self.root];
 
         let mut best_child = 0;
@@ -264,6 +209,77 @@ impl<E: Env + Clone> MCTS<E> {
         }
 
         best_child
+    }
+
+    fn expand_all_children(&mut self, node_id: usize) -> (f32, f32) {
+        let mut node = &mut self.nodes[node_id - self.root];
+
+        // reserve max number of actions for children to reduce allocations
+        node.children.reserve_exact(48);
+
+        // we are adding all children at once, so this node is about to be expanded
+        node.expanded = true;
+
+        let mut total_reward = 0.0;
+        let mut total_visits = 0.0;
+
+        let actions = node.env.actions();
+        let mut closed = Vec::with_capacity(actions.len());
+
+        // iterate through all the children!
+        for &action in actions.iter() {
+            // skip any actions that we've already added (possible because of symmetric actions)
+            if closed.contains(&action) {
+                continue;
+            }
+
+            // don't look at this action anymore
+            closed.push(action);
+
+            // add the symmetric action to closed if its a valid action... and keep track of it in children
+            let symmetrical_action = E::symmetry_of(&action);
+            let symmetry = if actions.contains(&symmetrical_action) {
+                closed.push(symmetrical_action);
+                Some(symmetrical_action)
+            } else {
+                None
+            };
+
+            // create the child node and sample a reward from it
+            let child_node = self.expand_single_child(node_id, action, symmetry);
+
+            // keep track of reward here so we can backprop 1 time for all the new children
+            total_reward += child_node.reward;
+            total_visits += 1.0;
+
+            self.nodes.push(child_node);
+        }
+
+        (total_reward, total_visits)
+    }
+
+    fn expand_single_child(
+        &mut self,
+        node_id: usize,
+        action: E::Action,
+        symmetry: Option<E::Action>,
+    ) -> Node<E> {
+        let child_id = self.next_node_id();
+
+        let node = &mut self.nodes[node_id - self.root];
+        node.children.push((action, child_id, symmetry));
+
+        // create the child node... note we will be modifying num_visits and reward later, so mutable
+        let mut child_node = Node::new(node_id, &node, &action);
+
+        // rollout child to get initial reward
+        let reward = self.rollout(child_node.env.clone());
+
+        // store initial reward & 1 visit
+        child_node.num_visits = 1.0;
+        child_node.reward = reward;
+
+        child_node
     }
 
     fn rollout(&mut self, mut env: E) -> f32 {
