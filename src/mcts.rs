@@ -172,7 +172,6 @@ impl<E: Env + Clone> MCTS<E> {
                 // iterate through all the children!
                 // TODO take advantage of any symmetry that exist in the game
                 for action in node.env.iter_actions() {
-                    // TODO calculate this as offset from beginning of expansion?
                     let child_id = self.next_node_id();
 
                     // create the child node and sample a reward from it
@@ -215,7 +214,6 @@ impl<E: Env + Clone> MCTS<E> {
     //         // assert!(node_id < self.nodes.len());
     //         let node = &self.nodes[node_id - self.root];
     //         if node.terminal {
-    //             // TODO check if a double fetch of the node happens from this
     //             return node_id;
     //         } else if node.expanded {
     //             node_id = self.select_best_child(node_id);
@@ -236,7 +234,7 @@ impl<E: Env + Clone> MCTS<E> {
 
         let visits = node.num_visits.log(2.0);
 
-        // TODO vectorize this since we know all children are next to each other
+        // note: using a slide of self.nodes[first_child..last_child] doesn't result in a performance increase
         for &(_, child_id) in node.children.iter() {
             let child = &self.nodes[child_id - self.root];
 
