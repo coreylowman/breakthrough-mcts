@@ -89,12 +89,8 @@ impl Env for BitBoardEnv {
         std::iter::Chain<std::iter::Chain<ActionIterator, ActionIterator>, ActionIterator>;
 
     fn symmetry_of(action: &Self::Action) -> Self::Action {
-        let (from, to) = *action;
-        let from_x = 7 - from % 8;
-        let from_y = from / 8;
-        let to_x = 7 - to % 8;
-        let to_y = to / 8;
-        (from_y * 8 + from_x, to_y * 8 + to_x)
+        let (from, to) = action;
+        (from - 2 * (from % 8) + 7, to - 2 * (to % 8) + 7)
     }
 
     fn new() -> BitBoardEnv {

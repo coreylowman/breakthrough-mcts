@@ -17,10 +17,8 @@ pub struct Node<E: Env + Clone> {
 impl<E: Env + Clone> Node<E> {
     pub fn memory_usage(&self) -> usize {
         std::mem::size_of::<Self>()
-            // + self.actions.capacity() * std::mem::size_of::<E::Action>()
-            + self.children.capacity() * std::mem::size_of::<(E::Action, usize)>()
-            // + self.unvisited_actions.capacity() * std::mem::size_of::<E::Action>()
-            + std::mem::size_of::<E::ActionIterator>()
+            + self.children.capacity()
+                * std::mem::size_of::<(E::Action, usize, Option<E::Action>)>()
     }
 
     pub fn new_root(my_action: bool) -> Self {
@@ -127,18 +125,25 @@ impl<E: Env + Clone> MCTS<E> {
         }
 
         if self.in_symmetry && root.children[best_action_ind].2.is_some() {
-            root.children[best_action_ind].2.unwrap().clone()
+            root.children[best_action_ind].2.unwrap()
         } else {
-            root.children[best_action_ind].0.clone()
+            root.children[best_action_ind].0
         }
     }
 
     pub fn negamax(&self, depth: u8) -> E::Action {
         // TODO add alpha beta pruning to this
-        self.negamax_search(self.root, depth, -1.0).0.unwrap()
+        let best_action_ind = self.negamax_search(self.root, depth, -1.0).0.unwrap();
+
+        let root = &self.nodes[self.root - self.root];
+        if self.in_symmetry && root.children[best_action_ind].2.is_some() {
+            root.children[best_action_ind].2.unwrap()
+        } else {
+            root.children[best_action_ind].0
+        }
     }
 
-    fn negamax_search(&self, node_id: usize, depth: u8, color: f32) -> (Option<E::Action>, f32) {
+    fn negamax_search(&self, node_id: usize, depth: u8, color: f32) -> (Option<usize>, f32) {
         let node = &self.nodes[node_id - self.root];
         if depth == 0 || node.terminal || !node.expanded {
             return (None, color * node.reward / node.num_visits);
@@ -153,8 +158,8 @@ impl<E: Env + Clone> MCTS<E> {
                 best_action_ind = i;
             }
         }
-        // TODO add symmetry to this
-        (Some(node.children[best_action_ind].0), best_value)
+
+        (Some(best_action_ind), best_value)
     }
 
     fn explore(&mut self) {
@@ -179,16 +184,19 @@ impl<E: Env + Clone> MCTS<E> {
                 let mut total_visits = 0.0;
 
                 let actions = node.env.actions();
-
-                let mut closed = Vec::new();
+                let mut closed = Vec::with_capacity(2 * actions.len());
 
                 // iterate through all the children!
                 for &action in actions.iter() {
+                    // skip any actions that we've already added (possible because of symmetric actions)
                     if closed.contains(&action) {
                         continue;
                     }
 
+                    // don't look at this action anymore
                     closed.push(action);
+
+                    // add the symmetric action to closed if its a valid action... and keep track of it in children
                     let symmetrical_action = E::symmetry_of(&action);
                     let symmetry = if actions.contains(&symmetrical_action) {
                         closed.push(symmetrical_action);
@@ -233,22 +241,6 @@ impl<E: Env + Clone> MCTS<E> {
         }
     }
 
-    // fn select_node(&mut self) -> usize {
-    //     let mut node_id = self.root;
-    //     loop {
-    //         // assert!(node_id < self.nodes.len());
-    //         let node = &self.nodes[node_id - self.root];
-    //         if node.terminal {
-    //             return node_id;
-    //         } else if node.expanded {
-    //             node_id = self.select_best_child(node_id);
-    //         } else {
-    //             return self.select_unvisited_child(node_id);
-    //         }
-    //     }
-    // }
-
-    // #[inline(never)]
     fn select_best_child(&mut self, node_id: usize) -> usize {
         // assert!(node_id < self.nodes.len());
 
@@ -274,32 +266,6 @@ impl<E: Env + Clone> MCTS<E> {
         best_child
     }
 
-    // #[inline(never)]
-    // fn select_unvisited_child(&mut self, parent_id: usize) -> usize {
-    //     let child_id = self.next_node_id();
-
-    //     let child_node = {
-    //         let node = &mut self.nodes[parent_id - self.root];
-    //         let action = node.unvisited_actions.next().unwrap();
-    //         if node.children.capacity() == 0 {
-    //             // finally allocate space for max possible actions if we are looking down this node
-    //             node.children.reserve_exact(48);
-    //         }
-    //         node.children.push((action, child_id));
-    //         if node.unvisited_actions.size_hint().0 == 0 {
-    //             node.expanded = true;
-    //             // note: very little impact to memory
-    //             // node.unvisited_actions.shrink_to_fit();
-    //             // node.actions.shrink_to_fit();
-    //             // node.children.shrink_to_fit();
-    //         }
-    //         Node::new(parent_id, &node, &action)
-    //     };
-    //     self.nodes.push_back(child_node);
-
-    //     child_id
-    // }
-
     fn rollout(&mut self, mut env: E) -> f32 {
         // assert!(node_id < self.nodes.len());
         // note: checking if env.is_over() before cloning doesn't make much difference
@@ -319,6 +285,7 @@ impl<E: Env + Clone> MCTS<E> {
             let node = &mut self.nodes[node_id - self.root];
 
             node.num_visits += num_visits;
+
             // TODO multiply reward by -1 instead of this if every time
             // note this is reversed because its actually the previous node's action that this node's reward is associated with
             node.reward += if !node.my_action { reward } else { -reward };
@@ -352,67 +319,5 @@ impl<E: Env + Clone> MCTS<E> {
             }
         }
         (self.nodes.len() - start_n, start.elapsed().as_millis())
-    }
-
-    pub fn timed_explore_n(&mut self, n: usize) -> (usize, u128) {
-        let mut select_ns = 0;
-        let mut select_best_ns = 0;
-        let mut select_unexpanded_ns = 0;
-        let mut rollout_ns = 0;
-        let mut backprop_ns = 0;
-        let mut select_best_n = 0;
-        let mut select_unexpanded_n = 0;
-
-        let start = Instant::now();
-        // for _i in 0..n {
-        //     let select_start = Instant::now();
-        //     // let node_id = self.select_node();
-        //     let node_id = {
-        //         let mut node_id = self.root;
-        //         loop {
-        //             // assert!(node_id < self.nodes.len());
-        //             let node = &self.nodes[node_id - self.root];
-        //             if node.terminal {
-        //                 break;
-        //             } else if node.expanded {
-        //                 select_best_n += 1;
-        //                 let select_best_start = Instant::now();
-        //                 node_id = self.select_best_child(node_id);
-        //                 select_best_ns += select_best_start.elapsed().as_nanos();
-        //             } else {
-        //                 select_unexpanded_n += 1;
-        //                 let select_unexpanded_start = Instant::now();
-        //                 node_id = self.select_unvisited_child(node_id);
-        //                 select_unexpanded_ns += select_unexpanded_start.elapsed().as_nanos();
-        //                 break;
-        //             }
-        //         }
-        //         node_id
-        //     };
-        //     select_ns += select_start.elapsed().as_nanos();
-
-        //     let rollout_start = Instant::now();
-        //     let reward = self.rollout(node_id);
-        //     rollout_ns += rollout_start.elapsed().as_nanos();
-
-        //     let backprop_start = Instant::now();
-        //     self.backprop(node_id, reward);
-        //     backprop_ns += backprop_start.elapsed().as_nanos();
-        // }
-
-        println!(
-            "select {}ns | rollout {}ns | backprop {}ns",
-            select_ns as f32 / n as f32,
-            rollout_ns as f32 / n as f32,
-            backprop_ns as f32 / n as f32
-        );
-        println!(
-            "select_best_child {}ns ({}) | select_unexpanded_child {}ns ({})",
-            select_best_ns as f32 / select_best_n as f32,
-            select_best_n,
-            select_unexpanded_ns as f32 / select_unexpanded_n as f32,
-            select_unexpanded_n,
-        );
-        (n, start.elapsed().as_millis())
     }
 }
