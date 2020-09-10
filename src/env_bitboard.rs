@@ -90,7 +90,7 @@ impl Env for BitBoardEnv {
 
     fn symmetry_of(action: &Self::Action) -> Self::Action {
         let (from, to) = action;
-        (from - 2 * (from % 8) + 7, to - 2 * (to % 8) + 7)
+        (from + 7 - 2 * (from % 8), to + 7 - 2 * (to % 8))
     }
 
     fn new() -> BitBoardEnv {
@@ -187,6 +187,8 @@ impl Env for BitBoardEnv {
     }
 
     fn step(&mut self, action: &Self::Action) -> bool {
+        // assert!(self.actions().contains(action));
+
         let &(from_sq, to_sq) = action;
 
         // note: doing an xor here instead makes no difference, even if you use the same mask for op_bb & my_bb

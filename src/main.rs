@@ -127,77 +127,81 @@ fn codingame_main() {
 }
 
 fn first_explore() {
-    let mut white_mcts = MCTS::<BitBoardEnv>::with_capacity(WHITE, 2_000_000, 0);
-
-    let (num_steps, millis) = white_mcts.explore_n(100_000);
-    eprintln!(
-        "{} ({} in {}ms)... {} nodes",
-        num_steps as f32 / millis as f32,
-        num_steps,
-        millis,
-        white_mcts.nodes.len(),
-    );
-
-    let mut expanded = [0; 10];
-    let mut total = [0; 10];
-    let mut open = vec![(0, 0)];
-    while open.len() > 0 {
-        let (node_id, depth) = open.pop().unwrap();
-        let node = &white_mcts.nodes[node_id];
-        total[depth] += 1;
-        if node.expanded {
-            expanded[depth] += 1;
-            for &(_, child_id, _) in node.children.iter() {
-                open.push((child_id, depth + 1));
-            }
-        }
-    }
-
-    for depth in 0..10 {
-        println!(
-            "Depth {:<02} | {:<06} / {:<06} ({:<06.02}%)",
-            depth,
-            expanded[depth],
-            total[depth],
-            if total[depth] == 0 {
-                0.0
-            } else {
-                100.0 * expanded[depth] as f32 / total[depth] as f32
-            }
+    loop {
+        let mut white_mcts = MCTS::<BitBoardEnv>::with_capacity(WHITE, 2_000_000, 0);
+        let (num_steps, millis) = white_mcts.explore_n(500_000);
+        eprintln!(
+            "{} ({} in {}ms)... {} nodes",
+            num_steps as f32 / millis as f32,
+            num_steps,
+            millis,
+            white_mcts.nodes.len(),
         );
     }
+
+    // let mut expanded = [0; 10];
+    // let mut total = [0; 10];
+    // let mut open = vec![(0, 0)];
+    // while open.len() > 0 {
+    //     let (node_id, depth) = open.pop().unwrap();
+    //     let node = &white_mcts.nodes[node_id];
+    //     total[depth] += 1;
+    //     if node.expanded {
+    //         expanded[depth] += 1;
+    //         for &(_, child_id, _) in node.children.iter() {
+    //             open.push((child_id, depth + 1));
+    //         }
+    //     }
+    // }
+
+    // for depth in 0..10 {
+    //     println!(
+    //         "Depth {:<02} | {:<06} / {:<06} ({:<06.02}%)",
+    //         depth,
+    //         expanded[depth],
+    //         total[depth],
+    //         if total[depth] == 0 {
+    //             0.0
+    //         } else {
+    //             100.0 * expanded[depth] as f32 / total[depth] as f32
+    //         }
+    //     );
+    // }
 }
 
 fn compare<E: Env + Clone>(
     seed: u64,
-    // white_action_fn: fn(&MCTS<E>) -> E::Action,
-    // black_action_fn: fn(&MCTS<E>) -> E::Action,
+    white_action_fn: fn(&MCTS<E>) -> E::Action,
+    black_action_fn: fn(&FrozenMCTS<E>) -> E::Action,
 ) -> bool {
     let mut env = E::new();
-    let mut white_mcts = FrozenMCTS::<E>::with_capacity(WHITE, 1_500_000, seed);
-    let mut black_mcts = MCTS::<E>::with_capacity(BLACK, 1_500_000, seed);
+    let mut white_mcts = MCTS::<E>::with_capacity(WHITE, 1_500_000, seed);
+    let mut black_mcts = FrozenMCTS::<E>::with_capacity(BLACK, 1_500_000, seed);
 
-    let (num_steps, millis) = white_mcts.explore_n(100_000);
-    let mut action = white_mcts.best_action();
+    let (num_steps, millis) = white_mcts.explore_for(1000);
+    let mut action = white_action_fn(&white_mcts);
     env.step(&action);
     white_mcts.step_action(&action);
     black_mcts.step_action(&action);
 
-    let (num_steps, millis) = black_mcts.explore_n(100_000);
-    action = black_mcts.best_action();
+    let (num_steps, millis) = black_mcts.explore_for(1000);
+    action = black_action_fn(&black_mcts);
     env.step(&action);
     white_mcts.step_action(&action);
     black_mcts.step_action(&action);
 
     while !env.is_over() {
         let action = if env.turn() == WHITE {
-            let (num_steps, millis) = white_mcts.explore_n(30_000);
-            white_mcts.best_action()
+            let (num_steps, millis) = white_mcts.explore_for(100);
+            white_action_fn(&white_mcts)
         } else {
-            let (num_steps, millis) = black_mcts.explore_n(30_000);
-            black_mcts.best_action()
+            let (num_steps, millis) = black_mcts.explore_for(100);
+            black_action_fn(&black_mcts)
         };
 
+        if !env.actions().contains(&action) {
+            panic!("invalid action! {} {:?}", env.turn(), action);
+        }
         env.step(&action);
         white_mcts.step_action(&action);
         black_mcts.step_action(&action);
@@ -227,8 +231,8 @@ fn local_main() {
     // for i in 0..300 {
     //     let winner = compare::<BitBoardEnv>(
     //         i,
-    //         // |mcts: &MCTS<BitBoardEnv>| mcts.best_action(),
-    //         // |mcts: &MCTS<BitBoardEnv>| mcts.negamax(2),
+    //         |mcts: &MCTS<BitBoardEnv>| mcts.best_action(),
+    //         |mcts: &FrozenMCTS<BitBoardEnv>| mcts.best_action(),
     //     );
     //     wins[winner as usize] += 1;
     //     println!(
