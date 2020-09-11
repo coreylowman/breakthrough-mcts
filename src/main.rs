@@ -59,7 +59,7 @@ fn codingame_main() {
         let move_string = input_line.trim().to_string(); // a legal move
         let action = parse_move(&move_string);
         legal_moves.push(action);
-        eprintln!("{:?} {:?}", move_string, action);
+        // eprintln!("{:?} {:?}", move_string, action);
     }
 
     let id = if legal_moves[0] == (8, 17) {
@@ -81,13 +81,16 @@ fn codingame_main() {
     }
 
     let (num_steps, millis) = mcts.explore_for(995);
-    eprintln!("{} in {}ms", num_steps, millis);
 
-    let action = mcts.best_action();
+    let action = mcts.negamax(2);
     let action_str = serialize_move(&action);
+    println!(
+        "{} {}%",
+        action_str,
+        100.0 - 100.0 * ((mcts.nodes[0].reward / mcts.nodes[0].num_visits) + 1.0) / 2.0,
+    );
+    eprintln!("{} in {}ms | {}", num_steps, millis, mcts.nodes.len());
     mcts.step_action(&action);
-    println!("{}", action_str);
-    eprintln!("{} {:?}", action_str, action);
 
     // game loop
     loop {
@@ -112,16 +115,14 @@ fn codingame_main() {
 
         let explore_ms = 95 - step_elapsed;
         let (num_steps, millis) = mcts.explore_for(explore_ms);
-        let action = mcts.best_action();
+        let action = mcts.negamax(2);
         let action_str = serialize_move(&action);
         println!(
-            "{} {} in {}ms | {} / {}",
+            "{} {}%",
             action_str,
-            num_steps,
-            millis,
-            mcts.nodes.len(),
-            mcts.nodes.capacity()
+            100.0 - 100.0 * ((mcts.nodes[0].reward / mcts.nodes[0].num_visits) + 1.0) / 2.0,
         );
+        eprintln!("{} in {}ms | {}", num_steps, millis, mcts.nodes.len());
         mcts.step_action(&action);
     }
 }
@@ -129,7 +130,7 @@ fn codingame_main() {
 fn first_explore() {
     loop {
         let mut white_mcts = MCTS::<BitBoardEnv>::with_capacity(WHITE, 2_000_000, 0);
-        let (num_steps, millis) = white_mcts.explore_n(10_000);
+        let (num_steps, millis) = white_mcts.explore_n(100_000);
         eprintln!(
             "{} ({} in {}ms)... {} nodes",
             num_steps as f32 / millis as f32,
@@ -222,28 +223,28 @@ fn local_main() {
         "BitBoardEnv::ActionIterator {}",
         std::mem::size_of::<<env_bitboard::BitBoardEnv as Env>::ActionIterator>()
     );
-    first_explore();
-    println!();
+    // first_explore();
+    // println!();
     // timed_first_explore();
     // run_game();
 
-    // let mut wins = [0, 0];
-    // for i in 0..300 {
-    //     let winner = compare::<BitBoardEnv>(
-    //         i,
-    //         |mcts: &MCTS<BitBoardEnv>| mcts.best_action(),
-    //         |mcts: &FrozenMCTS<BitBoardEnv>| mcts.best_action(),
-    //     );
-    //     wins[winner as usize] += 1;
-    //     println!(
-    //         "{:03} games | WHITE {:03} ({:05.2}%) | BLACK {:03} ({:05.2}%)",
-    //         i + 1,
-    //         wins[WHITE as usize],
-    //         100.0 * wins[WHITE as usize] as f32 / (i as f32 + 1.0),
-    //         wins[BLACK as usize],
-    //         100.0 * wins[BLACK as usize] as f32 / (i as f32 + 1.0)
-    //     );
-    // }
+    let mut wins = [0, 0];
+    for i in 0..300 {
+        let winner = compare::<BitBoardEnv>(
+            i,
+            |mcts: &MCTS<BitBoardEnv>| mcts.best_action(),
+            |mcts: &FrozenMCTS<BitBoardEnv>| mcts.best_action(),
+        );
+        wins[winner as usize] += 1;
+        println!(
+            "{:03} games | WHITE {:03} ({:05.2}%) | BLACK {:03} ({:05.2}%)",
+            i + 1,
+            wins[WHITE as usize],
+            100.0 * wins[WHITE as usize] as f32 / (i as f32 + 1.0),
+            wins[BLACK as usize],
+            100.0 * wins[BLACK as usize] as f32 / (i as f32 + 1.0)
+        );
+    }
 }
 
 fn main() {

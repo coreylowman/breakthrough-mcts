@@ -275,12 +275,11 @@ impl<E: Env + Clone> MCTS<E> {
 
     pub fn explore_for(&mut self, millis: u128) -> (usize, u128) {
         let start = Instant::now();
-        let mut steps = 0;
+        let start_n = self.nodes.len();
         while start.elapsed().as_millis() < millis {
             self.explore();
-            steps += 1;
         }
-        (steps, start.elapsed().as_millis())
+        (self.nodes.len() - start_n, start.elapsed().as_millis())
     }
 
     pub fn explore_n(&mut self, n: usize) -> (usize, u128) {

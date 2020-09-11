@@ -33,6 +33,10 @@ impl Iterator for ActionIterator {
 
         Some((from_sq, to_sq))
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.0 as usize, None)
+    }
 }
 
 #[derive(Eq, PartialEq, Clone)]
