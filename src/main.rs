@@ -129,7 +129,7 @@ fn codingame_main() {
 fn first_explore() {
     loop {
         let mut white_mcts = MCTS::<BitBoardEnv>::with_capacity(WHITE, 2_000_000, 0);
-        let (num_steps, millis) = white_mcts.explore_n(500_000);
+        let (num_steps, millis) = white_mcts.explore_n(10_000);
         eprintln!(
             "{} ({} in {}ms)... {} nodes",
             num_steps as f32 / millis as f32,

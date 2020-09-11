@@ -55,6 +55,9 @@ pub struct BitBoardEnv {
 
 impl BitBoardEnv {
     fn action_bitboards(&self) -> (BitBoard, BitBoard, BitBoard) {
+        let op_winners =
+            self.op_bb & ((ROW_1 << self.op.ty_shift).rotate_right(self.op.fwd_shift as u32));
+
         let fwd_to = self.my_bb.rotate_left(self.me.fwd_shift as u32) & !self.my_bb & !self.op_bb;
         let right_to =
             (self.my_bb & NOT_COL_8).rotate_left(self.me.right_shift as u32) & !self.my_bb;
@@ -64,8 +67,14 @@ impl BitBoardEnv {
         let right_win = right_to & (ROW_1 << self.me.ty_shift);
         let left_win = left_to & (ROW_1 << self.me.ty_shift);
 
+        let fwd_not_lose = fwd_to & op_winners;
+        let right_not_lose = right_to & op_winners;
+        let left_not_lose = left_to & op_winners;
+
         if fwd_win != 0 || right_win != 0 || left_win != 0 {
             (fwd_win, right_win, left_win)
+        } else if fwd_not_lose != 0 || right_not_lose != 0 || left_not_lose != 0 {
+            (fwd_not_lose, right_not_lose, left_not_lose)
         } else {
             (fwd_to, right_to, left_to)
         }
@@ -131,6 +140,16 @@ impl Env for BitBoardEnv {
         } else {
             -1.0
         }
+    }
+
+    fn num_actions(&self) -> u8 {
+        let (fwd_to, right_to, left_to) = self.action_bitboards();
+
+        let num_fwd_acs = fwd_to.count_ones() as u8;
+        let num_right_acs = right_to.count_ones() as u8;
+        let num_left_acs = left_to.count_ones() as u8;
+
+        num_fwd_acs + num_right_acs + num_left_acs
     }
 
     fn actions(&self) -> Vec<Self::Action> {

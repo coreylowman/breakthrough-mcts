@@ -95,7 +95,6 @@ impl<E: Env + Clone> MCTS<E> {
                 new_root
             }
             None => {
-                eprintln!("?? {:?}", action);
                 let child_node = Node::new(0, &self.nodes[self.root - self.root], action);
                 self.nodes.clear();
                 self.nodes.push(child_node);
@@ -205,13 +204,11 @@ impl<E: Env + Clone> MCTS<E> {
         let mut total_reward = 0.0;
         let mut total_visits = 0.0;
 
-        let actions = node.env.actions();
-
         // reserve max number of actions for children to reduce allocations
-        node.children.reserve_exact(actions.len());
+        node.children.reserve_exact(node.env.num_actions() as usize);
 
         // iterate through all the children!
-        for &action in actions.iter() {
+        for action in node.env.iter_actions() {
             // create the child node and sample a reward from it
             let child_node = self.expand_single_child(node_id, action);
 
@@ -289,12 +286,8 @@ impl<E: Env + Clone> MCTS<E> {
     pub fn explore_n(&mut self, n: usize) -> (usize, u128) {
         let start = Instant::now();
         let start_n = self.nodes.len();
-        let target_n = start_n + n;
         for _ in 0..n {
             self.explore();
-            if self.nodes.len() >= target_n {
-                break;
-            }
         }
         (self.nodes.len() - start_n, start.elapsed().as_millis())
     }
